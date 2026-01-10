@@ -1,5 +1,13 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
+import OpenAI from "openai";
+
+const openaiKey = process.env.OPENAI_API_KEY;
+if (!openaiKey) throw new Error("OPENAI_API_KEY not found");
+
+const openai = new OpenAI({
+  apiKey: openaiKey,
+});
 
 interface Rule {
   description: string;
@@ -86,27 +94,39 @@ async function run() {
 
     // Loop over code files and apply rules
     for (const file of codeFiles) {
-      const warnings: string[] = [];
+      if (!file.patch) continue;
 
-      for (const rule of rules) {
-        if (rule.test(file.filename, file.patch!)) {
-          warnings.push(`- ${rule.description}`);
-        }
-      }
+      // Build prompt for LLM
+      const prompt = `
+You are an expert code reviewer. Analyze the following code changes (diff) and provide concise, actionable suggestions. 
+Do not rewrite the code. Focus on potential issues, best practices, and improvements.
 
-      if (warnings.length === 0) continue; // nothing to report
+File: ${file.filename}
 
-      // Build the comment body
+Diff:
+${file.patch}
+`;
+
+      // Call OpenAI
+      const response = await openai.chat.completions.create({
+        model: "gpt-3.5-turbo",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.2,
+        max_tokens: 200,
+      });
+
+      const review = response.choices[0].message?.content?.trim();
+      if (!review) continue;
+
+      // Post comment to PR
       const commentBody = `
-**AI Code Reviewer (Rule-based)**
+**AI Code Review**
 
 File: \`${file.filename}\`
 
-Warnings:
-${warnings.join("\n")}
+${review}
 `;
 
-      // Post comment on PR
       await octokit.rest.issues.createComment({
         owner,
         repo,
@@ -114,7 +134,7 @@ ${warnings.join("\n")}
         body: commentBody,
       });
 
-      core.info(`Posted ${warnings.length} warnings for ${file.filename}`);
+      core.info(`Posted AI review for ${file.filename}`);
     }
   } catch (error: any) {
     core.setFailed(error.message);

@@ -32,9 +32,19 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 const core = __importStar(require("@actions/core"));
 const github = __importStar(require("@actions/github"));
+const openai_1 = __importDefault(require("openai"));
+const openaiKey = process.env.OPENAI_API_KEY;
+if (!openaiKey)
+    throw new Error("OPENAI_API_KEY not found");
+const openai = new openai_1.default({
+    apiKey: openaiKey,
+});
 const rules = [
     {
         description: "Contains console.log (remove before commit)",
@@ -100,31 +110,43 @@ async function run() {
         core.info(`Reviewing ${codeFiles.length} code files`);
         // Loop over code files and apply rules
         for (const file of codeFiles) {
-            const warnings = [];
-            for (const rule of rules) {
-                if (rule.test(file.filename, file.patch)) {
-                    warnings.push(`- ${rule.description}`);
-                }
-            }
-            if (warnings.length === 0)
-                continue; // nothing to report
-            // Build the comment body
+            if (!file.patch)
+                continue;
+            // Build prompt for LLM
+            const prompt = `
+You are an expert code reviewer. Analyze the following code changes (diff) and provide concise, actionable suggestions. 
+Do not rewrite the code. Focus on potential issues, best practices, and improvements.
+
+File: ${file.filename}
+
+Diff:
+${file.patch}
+`;
+            // Call OpenAI
+            const response = await openai.chat.completions.create({
+                model: "gpt-3.5-turbo",
+                messages: [{ role: "user", content: prompt }],
+                temperature: 0.2,
+                max_tokens: 200,
+            });
+            const review = response.choices[0].message?.content?.trim();
+            if (!review)
+                continue;
+            // Post comment to PR
             const commentBody = `
-**AI Code Reviewer (Rule-based)**
+**AI Code Review**
 
 File: \`${file.filename}\`
 
-Warnings:
-${warnings.join("\n")}
+${review}
 `;
-            // Post comment on PR
             await octokit.rest.issues.createComment({
                 owner,
                 repo,
                 issue_number: pr.number,
                 body: commentBody,
             });
-            core.info(`Posted ${warnings.length} warnings for ${file.filename}`);
+            core.info(`Posted AI review for ${file.filename}`);
         }
     }
     catch (error) {

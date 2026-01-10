@@ -12,9 +12,11 @@
   "description": "",
   "dependencies": {
     "@actions/core": "^2.0.2",
-    "@actions/github": "^7.0.0"
+    "@actions/github": "^7.0.0",
+    "openai": "^6.16.0"
   },
   "devDependencies": {
+    "@types/node": "^25.0.5",
     "typescript": "^5.9.3"
   }
 }
