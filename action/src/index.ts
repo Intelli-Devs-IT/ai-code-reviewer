@@ -1,6 +1,7 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
 import { HuggingFaceLLM } from "./llm.huggingface";
+import { loadConfig, fileMatchesConfig } from "./load-config";
 
 /* =======================
    Helpers: file filtering
@@ -114,6 +115,15 @@ async function run() {
     const octokit = github.getOctokit(token);
 
     /* =======================
+       Load configuration
+       ======================= */
+    const config = await loadConfig(octokit, owner, repo, pr.head.ref);
+
+    if (!config.enabled) {
+      core.info("AI reviewer disabled via config");
+      return;
+    }
+    /* =======================
        Init LLM (optional)
        ======================= */
 
@@ -147,13 +157,18 @@ async function run() {
       per_page: 100,
     });
 
-    const codeFiles = files.filter((file) => {
-      if (!file.patch) return false;
-      if (!isCodeFile(file.filename)) return false;
-      if (isTestFile(file.filename)) return false;
-      if (shouldIgnoreFile(file.filename)) return false;
-      return true;
-    });
+    // const codeFiles = files.filter((file) => {
+    //   if (!file.patch) return false;
+    //   if (!isCodeFile(file.filename)) return false;
+    //   if (isTestFile(file.filename)) return false;
+    //   if (shouldIgnoreFile(file.filename)) return false;
+    //   return true;
+    // });
+
+    const codeFiles = files
+      .filter((file) => file.patch)
+      .filter((file) => fileMatchesConfig(file.filename, config))
+      .slice(0, config.max_files);
 
     core.info(`Reviewing ${codeFiles.length} code files`);
 

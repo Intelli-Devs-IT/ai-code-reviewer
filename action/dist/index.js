@@ -36,6 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const core = __importStar(require("@actions/core"));
 const github = __importStar(require("@actions/github"));
 const llm_huggingface_1 = require("./llm.huggingface");
+const load_config_1 = require("./load-config");
 /* =======================
    Helpers: file filtering
    ======================= */
@@ -119,6 +120,14 @@ async function run() {
             throw new Error("GITHUB_TOKEN is missing");
         const octokit = github.getOctokit(token);
         /* =======================
+           Load configuration
+           ======================= */
+        const config = await (0, load_config_1.loadConfig)(octokit, owner, repo, pr.head.ref);
+        if (!config.enabled) {
+            core.info("AI reviewer disabled via config");
+            return;
+        }
+        /* =======================
            Init LLM (optional)
            ======================= */
         const hfKey = process.env.HF_API_KEY;
@@ -140,17 +149,17 @@ async function run() {
             pull_number: pr.number,
             per_page: 100,
         });
-        const codeFiles = files.filter((file) => {
-            if (!file.patch)
-                return false;
-            if (!isCodeFile(file.filename))
-                return false;
-            if (isTestFile(file.filename))
-                return false;
-            if (shouldIgnoreFile(file.filename))
-                return false;
-            return true;
-        });
+        // const codeFiles = files.filter((file) => {
+        //   if (!file.patch) return false;
+        //   if (!isCodeFile(file.filename)) return false;
+        //   if (isTestFile(file.filename)) return false;
+        //   if (shouldIgnoreFile(file.filename)) return false;
+        //   return true;
+        // });
+        const codeFiles = files
+            .filter((file) => file.patch)
+            .filter((file) => (0, load_config_1.fileMatchesConfig)(file.filename, config))
+            .slice(0, config.max_files);
         core.info(`Reviewing ${codeFiles.length} code files`);
         /* =======================
            Review each file
