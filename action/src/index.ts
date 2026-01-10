@@ -96,11 +96,26 @@ class OllamaLLM implements LLMClient {
   }
 }
 
-// class HuggingFaceLLM implements LLMClient {
-//   //   async reviewDiff(prompt: string) {
-//   //     // call HF API
-//   //   }
-// }
+async function findExistingComment(
+  octokit: any,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  filename: string
+) {
+  const comments = await octokit.paginate(octokit.rest.issues.listComments, {
+    owner,
+    repo,
+    issue_number: prNumber,
+    per_page: 100,
+  });
+
+  const marker = `<!-- ai-code-reviewer-FB:file=${filename} -->`;
+
+  return comments.find(
+    (comment: any) => comment.body && comment.body.includes(marker)
+  );
+}
 
 async function run() {
   try {
@@ -161,56 +176,48 @@ ${file.patch}
 
       const review = await llm?.reviewDiff(prompt);
 
-      //   try {
-      //     // Call OpenAI
-      //     // const response = await openai.chat.completions.create({
-      //     //   model: "gpt-3.5-turbo",
-      //     //   messages: [{ role: "user", content: prompt }],
-      //     //   temperature: 0.2,
-      //     //   max_tokens: 200,
-      //     // });
-      //     // review = response.choices[0].message?.content?.trim();
-
-      //     // LOCAL ollama model = "qwen2.5-coder:1.5b"
-      //     const response = await fetch("http://localhost:11434/api/generate", {
-      //       method: "POST",
-      //       headers: { "Content-Type": "application/json" },
-      //       body: JSON.stringify({
-      //         model: "qwen2.5-coder:1.5b",
-      //         prompt,
-      //         stream: false,
-      //       }),
-      //     });
-
-      //     const data = await response.json();
-      //     review = data.response;
-      //   } catch (err: any) {
-      //     core.warning(`AI review skipped for ${file.filename}: ${err.message}`);
-      //     continue;
-      //   }
-
       if (!review) {
         core.warning(`AI review skipped for ${file.filename}`);
         continue;
       }
 
       // Post comment to PR
+      const marker = `<!-- ai-code-reviewer:file=${file.filename} -->`;
       const commentBody = `
-**AI Code Review**
+        ${marker}
+        **AI Code Review**
 
-File: \`${file.filename}\`
+        File: \`${file.filename}\`
 
-${review}
-`;
-
-      await octokit.rest.issues.createComment({
+        ${review}
+        `;
+      const existingComment = await findExistingComment(
+        octokit,
         owner,
         repo,
-        issue_number: pr.number,
-        body: commentBody,
-      });
+        pr.number,
+        file.filename
+      );
 
-      core.info(`Posted AI review for ${file.filename}`);
+      if (existingComment) {
+        await octokit.rest.issues.updateComment({
+          owner,
+          repo,
+          comment_id: existingComment.id,
+          body: commentBody,
+        });
+        core.info(`Updated AI review for ${file.filename}`);
+        continue;
+      } else {
+        await octokit.rest.issues.createComment({
+          owner,
+          repo,
+          issue_number: pr.number,
+          body: commentBody,
+        });
+
+        core.info(`Posted AI review for ${file.filename}`);
+      }
     }
   } catch (error: any) {
     core.setFailed(error.message);
