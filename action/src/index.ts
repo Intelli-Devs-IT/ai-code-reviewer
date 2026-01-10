@@ -1,6 +1,26 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
 
+interface Rule {
+  description: string;
+  test: (fileName: string, patch: string) => boolean;
+}
+
+const rules: Rule[] = [
+  {
+    description: "Contains console.log (remove before commit)",
+    test: (_, patch) => /\bconsole\.log\b/.test(patch),
+  },
+  {
+    description: "Contains eval() (avoid dynamic execution)",
+    test: (_, patch) => /\beval\s*\(/.test(patch),
+  },
+  {
+    description: "Contains trailing whitespace",
+    test: (_, patch) => /[ \t]+$/m.test(patch),
+  },
+];
+
 function isCodeFile(filename: string): boolean {
   return (
     filename.endsWith(".ts") ||
@@ -24,27 +44,6 @@ function shouldIgnoreFile(filename: string): boolean {
     ignoredFiles.includes(filename)
   );
 }
-
-interface Rule {
-  description: string;
-  test: (fileName: string, patch: string) => boolean;
-}
-
-// Example rules
-const rules: Rule[] = [
-  {
-    description: "Contains console.log (remove before commit)",
-    test: (_, patch) => /\bconsole\.log\b/.test(patch),
-  },
-  {
-    description: "Contains eval() (avoid dynamic execution)",
-    test: (_, patch) => /\beval\s*\(/.test(patch),
-  },
-  {
-    description: "Contains trailing whitespace",
-    test: (_, patch) => /[ \t]+$/m.test(patch),
-  },
-];
 
 async function run() {
   try {
@@ -75,8 +74,6 @@ async function run() {
       per_page: 100,
     });
 
-    core.info(`Found ${files.length} changed files`);
-
     const codeFiles = files.filter((file) => {
       if (!file.patch) return false;
       if (!isCodeFile(file.filename)) return false;
@@ -87,21 +84,37 @@ async function run() {
 
     core.info(`Reviewing ${codeFiles.length} code files`);
 
+    // Loop over code files and apply rules
     for (const file of codeFiles) {
-      core.info(`\n--- ${file.filename} (${file.status}) ---`);
-
-      if (!file.patch) {
-        core.info("No diff available (binary or too large)");
-        continue;
-      }
-      core.info(file.patch);
+      const warnings: string[] = [];
 
       for (const rule of rules) {
-        if (rule.test(file.filename, file.patch)) {
-          core.info(rule.description);
-          core.warning(`[${file.filename}] ${rule.description}`);
+        if (rule.test(file.filename, file.patch!)) {
+          warnings.push(`- ${rule.description}`);
         }
       }
+
+      if (warnings.length === 0) continue; // nothing to report
+
+      // Build the comment body
+      const commentBody = `
+**AI Code Reviewer (Rule-based)**
+
+File: \`${file.filename}\`
+
+Warnings:
+${warnings.join("\n")}
+`;
+
+      // Post comment on PR
+      await octokit.rest.issues.createComment({
+        owner,
+        repo,
+        issue_number: pr.number,
+        body: commentBody,
+      });
+
+      core.info(`Posted ${warnings.length} warnings for ${file.filename}`);
     }
   } catch (error: any) {
     core.setFailed(error.message);
