@@ -1,6 +1,7 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
 import OpenAI from "openai";
+import { HuggingFaceLLM } from "./llm.huggingface";
 
 const openaiKey = process.env.OPENAI_API_KEY;
 if (!openaiKey) throw new Error("OPENAI_API_KEY not found");
@@ -8,6 +9,13 @@ if (!openaiKey) throw new Error("OPENAI_API_KEY not found");
 const openai = new OpenAI({
   apiKey: openaiKey,
 });
+const hfKey = process.env.HF_API_KEY;
+if (!hfKey) {
+  core.warning("HF_API_KEY not set, skipping AI reviews");
+}
+interface LLMClient {
+  reviewDiff(prompt: string): Promise<string | null>;
+}
 
 interface Rule {
   description: string;
@@ -53,6 +61,47 @@ function shouldIgnoreFile(filename: string): boolean {
   );
 }
 
+class OpenAILLM implements LLMClient {
+  async reviewDiff(prompt: string) {
+    try {
+      const res = await openai.chat.completions.create({
+        model: "gpt-3.5-turbo",
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 200,
+      });
+      return res.choices[0].message?.content ?? null;
+    } catch {
+      return null;
+    }
+  }
+}
+class OllamaLLM implements LLMClient {
+  async reviewDiff(prompt: string) {
+    try {
+      // LOCAL ollama model = "qwen2.5-coder:1.5b"
+      const response = await fetch("http://localhost:11434/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "qwen2.5-coder:1.5b",
+          prompt,
+          stream: false,
+        }),
+      });
+      const data = await response.json();
+      return data.response;
+    } catch (err: any) {
+      return null;
+    }
+  }
+}
+
+// class HuggingFaceLLM implements LLMClient {
+//   //   async reviewDiff(prompt: string) {
+//   //     // call HF API
+//   //   }
+// }
+
 async function run() {
   try {
     core.info("🤖 AI Code Reviewer Action started");
@@ -96,10 +145,13 @@ async function run() {
     for (const file of codeFiles) {
       if (!file.patch) continue;
 
+      const llm = hfKey ? new HuggingFaceLLM(hfKey) : null;
+
       // Build prompt for LLM
       const prompt = `
 You are an expert code reviewer. Analyze the following code changes (diff) and provide concise, actionable suggestions. 
-Do not rewrite the code. Focus on potential issues, best practices, and improvements.
+Do not rewrite the code. Focus on potential issues, best practices, and improvements. Do not repeat the code. Use bullet points.
+
 
 File: ${file.filename}
 
@@ -107,16 +159,40 @@ Diff:
 ${file.patch}
 `;
 
-      // Call OpenAI
-      const response = await openai.chat.completions.create({
-        model: "gpt-5.2",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.2,
-        max_tokens: 200,
-      });
+      const review = await llm?.reviewDiff(prompt);
 
-      const review = response.choices[0].message?.content?.trim();
-      if (!review) continue;
+      //   try {
+      //     // Call OpenAI
+      //     // const response = await openai.chat.completions.create({
+      //     //   model: "gpt-3.5-turbo",
+      //     //   messages: [{ role: "user", content: prompt }],
+      //     //   temperature: 0.2,
+      //     //   max_tokens: 200,
+      //     // });
+      //     // review = response.choices[0].message?.content?.trim();
+
+      //     // LOCAL ollama model = "qwen2.5-coder:1.5b"
+      //     const response = await fetch("http://localhost:11434/api/generate", {
+      //       method: "POST",
+      //       headers: { "Content-Type": "application/json" },
+      //       body: JSON.stringify({
+      //         model: "qwen2.5-coder:1.5b",
+      //         prompt,
+      //         stream: false,
+      //       }),
+      //     });
+
+      //     const data = await response.json();
+      //     review = data.response;
+      //   } catch (err: any) {
+      //     core.warning(`AI review skipped for ${file.filename}: ${err.message}`);
+      //     continue;
+      //   }
+
+      if (!review) {
+        core.warning(`AI review skipped for ${file.filename}`);
+        continue;
+      }
 
       // Post comment to PR
       const commentBody = `
