@@ -116,6 +116,18 @@ async function findExistingComment(
     (comment: any) => comment.body && comment.body.includes(marker)
   );
 }
+function extractLineNumberFromPatch(patch: string): number | null {
+  const lines = patch.split("\n");
+
+  for (const line of lines) {
+    // Added lines start with "+"
+    if (line.startsWith("+") && !line.startsWith("+++")) {
+      return 1; // safe default for new files
+    }
+  }
+
+  return null;
+}
 
 async function run() {
   try {
@@ -129,6 +141,8 @@ async function run() {
     }
 
     const pr = context.payload.pull_request;
+    const commitSha = pr.head.sha;
+
     const { owner, repo } = context.repo;
 
     const token = process.env.GITHUB_TOKEN;
@@ -181,8 +195,15 @@ ${file.patch}
         continue;
       }
 
+      const line = extractLineNumberFromPatch(file.patch!);
+      if (!line) {
+        core.warning(`No valid line found for ${file.filename}`);
+        continue;
+      }
+      // Optional: Add timestamp or other info like commit hash to review
       // Post comment to PR
       const marker = `<!-- ai-code-reviewer-FB:file=${file.filename} -->`;
+
       const commentBody = `
         ${marker}
         **AI Code Review**
@@ -209,14 +230,31 @@ ${file.patch}
         core.info(`Updated AI review for ${file.filename}`);
         continue;
       } else {
-        await octokit.rest.issues.createComment({
+        await octokit.rest.pulls.createReviewComment({
           owner,
           repo,
-          issue_number: pr.number,
-          body: commentBody,
+          pull_number: pr.number,
+          commit_id: commitSha,
+          path: file.filename,
+          line,
+          side: "RIGHT",
+          body: `
+${marker}
+🤖 **AI Code Review**
+
+${review}
+`,
         });
 
-        core.info(`Posted AI review for ${file.filename}`);
+        core.info(`Posted inline review for ${file.filename}`);
+        // await octokit.rest.issues.createComment({
+        //   owner,
+        //   repo,
+        //   issue_number: pr.number,
+        //   body: commentBody,
+        // });
+
+        // core.info(`Posted AI review for ${file.filename}`);
       }
     }
   } catch (error: any) {
