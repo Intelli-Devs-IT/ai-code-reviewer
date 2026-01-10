@@ -25,6 +25,27 @@ function shouldIgnoreFile(filename: string): boolean {
   );
 }
 
+interface Rule {
+  description: string;
+  test: (fileName: string, patch: string) => boolean;
+}
+
+// Example rules
+const rules: Rule[] = [
+  {
+    description: "Contains console.log (remove before commit)",
+    test: (_, patch) => /\bconsole\.log\b/.test(patch),
+  },
+  {
+    description: "Contains eval() (avoid dynamic execution)",
+    test: (_, patch) => /\beval\s*\(/.test(patch),
+  },
+  {
+    description: "Contains trailing whitespace",
+    test: (_, patch) => /[ \t]+$/m.test(patch),
+  },
+];
+
 async function run() {
   try {
     core.info("🤖 AI Code Reviewer Action started");
@@ -74,6 +95,12 @@ async function run() {
         continue;
       }
       core.info(file.patch);
+
+      for (const rule of rules) {
+        if (rule.test(file.filename, file.patch)) {
+          core.warning(`[${file.filename}] ${rule.description}`);
+        }
+      }
     }
   } catch (error: any) {
     core.setFailed(error.message);
