@@ -93,6 +93,27 @@ async function getExistingInlineComments(
 }
 
 /* =======================
+   Helpers: fetch existing summary comment
+   ======================= */
+const SUMMARY_MARKER = "<!-- ai-code-reviewer-FB:summary -->";
+
+async function getExistingSummaryComment(
+  octokit: any,
+  owner: string,
+  repo: string,
+  issueNumber: number
+) {
+  const comments = await octokit.paginate(octokit.rest.issues.listComments, {
+    owner,
+    repo,
+    issue_number: issueNumber,
+    per_page: 100,
+  });
+
+  return comments.find((c: any) => c.body?.includes(SUMMARY_MARKER));
+}
+
+/* =======================
    Main Action
    ======================= */
 
@@ -192,6 +213,7 @@ ${file.patch}
 `;
 
       let review: string | null = null;
+      const summaryFindings: string[] = [];
 
       try {
         review = await llm.reviewDiff(prompt);
@@ -203,6 +225,53 @@ ${file.patch}
       if (!review || review.length < 30) {
         core.info(`Low-confidence review skipped for ${file.filename}`);
         continue;
+      }
+
+      summaryFindings.push(`### ${file.filename}\n${review}`);
+
+      /* =======================
+         Post summary comment
+         ======================= */
+
+      if (summaryFindings.length === 0) {
+        core.info("No summary findings to post");
+        return;
+      }
+
+      const summaryBody = `
+${SUMMARY_MARKER}
+🤖 **AI Code Review Summary**
+
+**Files reviewed:** ${summaryFindings.length}
+
+${summaryFindings.join("\n\n")}
+`;
+
+      const existingSummary = await getExistingSummaryComment(
+        octokit,
+        owner,
+        repo,
+        pr.number
+      );
+
+      if (existingSummary) {
+        await octokit.rest.issues.updateComment({
+          owner,
+          repo,
+          comment_id: existingSummary.id,
+          body: summaryBody,
+        });
+
+        core.info("Updated AI review summary comment");
+      } else {
+        await octokit.rest.issues.createComment({
+          owner,
+          repo,
+          issue_number: pr.number,
+          body: summaryBody,
+        });
+
+        core.info("Created AI review summary comment");
       }
 
       /* =======================
