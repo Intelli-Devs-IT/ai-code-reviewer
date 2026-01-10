@@ -4,12 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.HuggingFaceLLM = void 0;
-// import fetch from "node-fetch";
 const openai_1 = __importDefault(require("openai"));
-// const client = new OpenAI({
-//   baseURL: "https://router.huggingface.co/v1",
-//   apiKey: process.env.HF_API_KEY,
-// });
 const baseurl = "https://router.huggingface.co/v1";
 class HuggingFaceLLM {
     constructor(apiKey) {
@@ -36,6 +31,7 @@ class HuggingFaceLLM {
         catch (error) {
             return error instanceof Error ? error.message : String(error);
         }
+        // This is the old implementation using fetch
         // try {
         //   const response = await fetch(
         //     `https://api-inference.huggingface.co/models/${this.model}`,

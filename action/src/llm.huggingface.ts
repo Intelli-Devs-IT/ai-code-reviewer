@@ -1,10 +1,4 @@
-// import fetch from "node-fetch";
 import OpenAI from "openai";
-
-// const client = new OpenAI({
-//   baseURL: "https://router.huggingface.co/v1",
-//   apiKey: process.env.HF_API_KEY,
-// });
 
 const baseurl = "https://router.huggingface.co/v1";
 export class HuggingFaceLLM {
@@ -36,6 +30,9 @@ export class HuggingFaceLLM {
     } catch (error) {
       return error instanceof Error ? error.message : String(error);
     }
+
+    // This is the old implementation using fetch
+
     // try {
     //   const response = await fetch(
     //     `https://api-inference.huggingface.co/models/${this.model}`,
