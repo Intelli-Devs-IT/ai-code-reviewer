@@ -116,18 +116,18 @@ async function findExistingComment(
     (comment: any) => comment.body && comment.body.includes(marker)
   );
 }
-function extractLineNumberFromPatch(patch: string): number | null {
-  const lines = patch.split("\n");
+// function extractLineNumberFromPatch(patch: string): number | null {
+//   const lines = patch.split("\n");
 
-  for (const line of lines) {
-    // Added lines start with "+"
-    if (line.startsWith("+") && !line.startsWith("+++")) {
-      return 1; // safe default for new files
-    }
-  }
+//   for (const line of lines) {
+//     // Added lines start with "+"
+//     if (line.startsWith("+") && !line.startsWith("+++")) {
+//       return 1; // safe default for new files
+//     }
+//   }
 
-  return null;
-}
+//   return null;
+// }
 
 async function run() {
   try {
@@ -228,12 +228,7 @@ ${file.patch}
         path: file.filename,
         line,
         side: "RIGHT",
-        body: `
-${marker}
-🤖 **AI Code Review**
-
-${review}
-`,
+        body: review,
       });
 
       core.info(`Posted inline review for ${file.filename}`);

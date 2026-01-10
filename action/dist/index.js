@@ -125,16 +125,16 @@ async function findExistingComment(octokit, owner, repo, prNumber, filename) {
     const marker = `<!-- ai-code-reviewer-FB:file=${filename} -->`;
     return comments.find((comment) => comment.body && comment.body.includes(marker));
 }
-function extractLineNumberFromPatch(patch) {
-    const lines = patch.split("\n");
-    for (const line of lines) {
-        // Added lines start with "+"
-        if (line.startsWith("+") && !line.startsWith("+++")) {
-            return 1; // safe default for new files
-        }
-    }
-    return null;
-}
+// function extractLineNumberFromPatch(patch: string): number | null {
+//   const lines = patch.split("\n");
+//   for (const line of lines) {
+//     // Added lines start with "+"
+//     if (line.startsWith("+") && !line.startsWith("+++")) {
+//       return 1; // safe default for new files
+//     }
+//   }
+//   return null;
+// }
 async function run() {
     try {
         core.info("🤖 AI Code Reviewer Action started");
@@ -216,12 +216,7 @@ ${file.patch}
                 path: file.filename,
                 line,
                 side: "RIGHT",
-                body: `
-${marker}
-🤖 **AI Code Review**
-
-${review}
-`,
+                body: review,
             });
             core.info(`Posted inline review for ${file.filename}`);
             //       if (existingComment) {
