@@ -1,0 +1,7 @@
+name: "AI Code Reviewer"
+description: "AI-based code review for pull requests"
+author: "Fru Boris"
+
+runs:
+  using: "node20"
+  main: "dist/index.js"
