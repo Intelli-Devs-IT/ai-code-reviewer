@@ -1,4 +1,6 @@
 "use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.extractLineNumberFromPatch = extractLineNumberFromPatch;
 function extractLineNumberFromPatch(patch) {
     const lines = patch.split("\n");
     let newLineNumber = 0;

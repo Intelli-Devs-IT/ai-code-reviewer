@@ -40,6 +40,7 @@ const core = __importStar(require("@actions/core"));
 const github = __importStar(require("@actions/github"));
 const openai_1 = __importDefault(require("openai"));
 const llm_huggingface_1 = require("./llm.huggingface");
+const diff_parser_1 = require("./diff.parser");
 const openaiKey = process.env.OPENAI_API_KEY;
 if (!openaiKey)
     throw new Error("OPENAI_API_KEY not found");
@@ -191,7 +192,7 @@ ${file.patch}
                 core.warning(`AI review skipped for ${file.filename}`);
                 continue;
             }
-            const line = extractLineNumberFromPatch(file.patch);
+            const line = (0, diff_parser_1.extractLineNumberFromPatch)(file.patch);
             if (!line) {
                 core.warning(`No valid line found for ${file.filename}`);
                 continue;

@@ -1,4 +1,4 @@
-function extractLineNumberFromPatch(patch: string): number | null {
+export function extractLineNumberFromPatch(patch: string): number | null {
   const lines = patch.split("\n");
 
   let newLineNumber = 0;

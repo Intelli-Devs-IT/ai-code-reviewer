@@ -2,7 +2,7 @@ import * as core from "@actions/core";
 import * as github from "@actions/github";
 import OpenAI from "openai";
 import { HuggingFaceLLM } from "./llm.huggingface";
-
+import { extractLineNumberFromPatch } from "./diff.parser";
 const openaiKey = process.env.OPENAI_API_KEY;
 if (!openaiKey) throw new Error("OPENAI_API_KEY not found");
 
