@@ -2,7 +2,7 @@ import * as core from "@actions/core";
 import * as github from "@actions/github";
 import OpenAI from "openai";
 import { HuggingFaceLLM } from "./llm.huggingface";
-import { extractLineNumberFromPatch } from "./diff.parser";
+import { extractLineNumbersFromPatch } from "./diff.parser";
 const openaiKey = process.env.OPENAI_API_KEY;
 if (!openaiKey) throw new Error("OPENAI_API_KEY not found");
 
@@ -195,11 +195,13 @@ ${file.patch}
         continue;
       }
 
-      const line = extractLineNumberFromPatch(file.patch!);
-      if (!line) {
-        core.warning(`No valid line found for ${file.filename}`);
+      const lines = extractLineNumbersFromPatch(file.patch!);
+
+      if (lines.length === 0) {
+        core.warning(`No valid lines found for ${file.filename}`);
         continue;
       }
+
       // Optional: Add timestamp or other info like commit hash to review
       // Post comment to PR
       const marker = `<!-- ai-code-reviewer-FB:file=${file.filename} -->`;
@@ -220,18 +222,32 @@ ${file.patch}
         file.filename
       );
 
-      await octokit.rest.pulls.createReviewComment({
-        owner,
-        repo,
-        pull_number: pr.number,
-        commit_id: commitSha,
-        path: file.filename,
-        line,
-        side: "RIGHT",
-        body: review,
-      });
+      for (const line of lines) {
+        if (review.length < 30) {
+          core.info(`Skipping low-confidence review for ${file.filename}`);
+          continue;
+        }
 
-      core.info(`Posted inline review for ${file.filename}`);
+        const marker = `<!-- ai-code-reviewer-FB:file=${file.filename}:line=${line} -->`;
+
+        await octokit.rest.pulls.createReviewComment({
+          owner,
+          repo,
+          pull_number: pr.number,
+          commit_id: commitSha,
+          path: file.filename,
+          line,
+          side: "RIGHT",
+          body: `
+${marker}
+🤖 **AI Code Review**
+
+${review}
+`,
+        });
+
+        core.info(`Posted inline review for ${file.filename} at line ${line}`);
+      }
 
       //       if (existingComment) {
       //         await octokit.rest.issues.updateComment({

@@ -192,9 +192,9 @@ ${file.patch}
                 core.warning(`AI review skipped for ${file.filename}`);
                 continue;
             }
-            const line = (0, diff_parser_1.extractLineNumberFromPatch)(file.patch);
-            if (!line) {
-                core.warning(`No valid line found for ${file.filename}`);
+            const lines = (0, diff_parser_1.extractLineNumbersFromPatch)(file.patch);
+            if (lines.length === 0) {
+                core.warning(`No valid lines found for ${file.filename}`);
                 continue;
             }
             // Optional: Add timestamp or other info like commit hash to review
@@ -209,17 +209,29 @@ ${file.patch}
         ${review}
         `;
             const existingComment = await findExistingComment(octokit, owner, repo, pr.number, file.filename);
-            await octokit.rest.pulls.createReviewComment({
-                owner,
-                repo,
-                pull_number: pr.number,
-                commit_id: commitSha,
-                path: file.filename,
-                line,
-                side: "RIGHT",
-                body: review,
-            });
-            core.info(`Posted inline review for ${file.filename}`);
+            for (const line of lines) {
+                if (review.length < 30) {
+                    core.info(`Skipping low-confidence review for ${file.filename}`);
+                    continue;
+                }
+                const marker = `<!-- ai-code-reviewer-FB:file=${file.filename}:line=${line} -->`;
+                await octokit.rest.pulls.createReviewComment({
+                    owner,
+                    repo,
+                    pull_number: pr.number,
+                    commit_id: commitSha,
+                    path: file.filename,
+                    line,
+                    side: "RIGHT",
+                    body: `
+${marker}
+🤖 **AI Code Review**
+
+${review}
+`,
+                });
+                core.info(`Posted inline review for ${file.filename} at line ${line}`);
+            }
             //       if (existingComment) {
             //         await octokit.rest.issues.updateComment({
             //           owner,
