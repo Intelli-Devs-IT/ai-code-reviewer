@@ -35,6 +35,21 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 const core = __importStar(require("@actions/core"));
 const github = __importStar(require("@actions/github"));
+function isCodeFile(filename) {
+    return (filename.endsWith(".ts") ||
+        filename.endsWith(".js") ||
+        filename.endsWith(".tsx") ||
+        filename.endsWith(".jsx"));
+}
+function isTestFile(filename) {
+    return filename.includes(".spec.") || filename.includes(".test.");
+}
+function shouldIgnoreFile(filename) {
+    const ignoredPaths = ["node_modules/", "dist/", "build/"];
+    const ignoredFiles = ["package-lock.json", "yarn.lock", "pnpm-lock.yaml"];
+    return (ignoredPaths.some((path) => filename.startsWith(path)) ||
+        ignoredFiles.includes(filename));
+}
 async function run() {
     try {
         core.info("🤖 AI Code Reviewer Action started");
@@ -58,7 +73,19 @@ async function run() {
             per_page: 100,
         });
         core.info(`Found ${files.length} changed files`);
-        for (const file of files) {
+        const codeFiles = files.filter((file) => {
+            if (!file.patch)
+                return false;
+            if (!isCodeFile(file.filename))
+                return false;
+            if (isTestFile(file.filename))
+                return false;
+            if (shouldIgnoreFile(file.filename))
+                return false;
+            return true;
+        });
+        core.info(`Reviewing ${codeFiles.length} code files`);
+        for (const file of codeFiles) {
             core.info(`\n--- ${file.filename} (${file.status}) ---`);
             if (!file.patch) {
                 core.info("No diff available (binary or too large)");
