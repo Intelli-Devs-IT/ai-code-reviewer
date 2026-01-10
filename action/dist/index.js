@@ -91,6 +91,17 @@ function extractLineNumbersFromPatch(patch) {
     return commentLines;
 }
 /* =======================
+   Helpers: fetch existing inline comments
+   ======================= */
+async function getExistingInlineComments(octokit, owner, repo, pullNumber) {
+    return await octokit.paginate(octokit.rest.pulls.listReviewComments, {
+        owner,
+        repo,
+        pull_number: pullNumber,
+        per_page: 100,
+    });
+}
+/* =======================
    Main Action
    ======================= */
 async function run() {
@@ -116,6 +127,10 @@ async function run() {
             core.warning("HF_API_KEY not set. AI reviews disabled.");
             return;
         }
+        /* =======================
+           Fetch existing inline comments
+           ======================= */
+        const existingInlineComments = await getExistingInlineComments(octokit, owner, repo, pr.number);
         /* =======================
            Fetch PR files
            ======================= */
@@ -170,7 +185,12 @@ ${file.patch}
                Post inline comments
                ======================= */
             for (const line of lines) {
-                const marker = `<!-- ai-code-reviewer:file=${file.filename}:line=${line} -->`;
+                const marker = `<!-- ai-code-reviewer-FB:file=${file.filename}:line=${line} -->`;
+                const alreadyExists = existingInlineComments.some((comment) => comment.body?.includes(marker));
+                if (alreadyExists) {
+                    core.info(`Skipping duplicate inline comment for ${file.filename}:${line}`);
+                    continue;
+                }
                 await octokit.rest.pulls.createReviewComment({
                     owner,
                     repo,
