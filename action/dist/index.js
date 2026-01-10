@@ -208,41 +208,55 @@ ${file.patch}
         ${review}
         `;
             const existingComment = await findExistingComment(octokit, owner, repo, pr.number, file.filename);
-            if (existingComment) {
-                await octokit.rest.issues.updateComment({
-                    owner,
-                    repo,
-                    comment_id: existingComment.id,
-                    body: commentBody,
-                });
-                core.info(`Updated AI review for ${file.filename}`);
-                continue;
-            }
-            else {
-                await octokit.rest.pulls.createReviewComment({
-                    owner,
-                    repo,
-                    pull_number: pr.number,
-                    commit_id: commitSha,
-                    path: file.filename,
-                    line,
-                    side: "RIGHT",
-                    body: `
+            await octokit.rest.pulls.createReviewComment({
+                owner,
+                repo,
+                pull_number: pr.number,
+                commit_id: commitSha,
+                path: file.filename,
+                line,
+                side: "RIGHT",
+                body: `
 ${marker}
 🤖 **AI Code Review**
 
 ${review}
 `,
-                });
-                core.info(`Posted inline review for ${file.filename}`);
-                // await octokit.rest.issues.createComment({
-                //   owner,
-                //   repo,
-                //   issue_number: pr.number,
-                //   body: commentBody,
-                // });
-                // core.info(`Posted AI review for ${file.filename}`);
-            }
+            });
+            core.info(`Posted inline review for ${file.filename}`);
+            //       if (existingComment) {
+            //         await octokit.rest.issues.updateComment({
+            //           owner,
+            //           repo,
+            //           comment_id: existingComment.id,
+            //           body: commentBody,
+            //         });
+            //         core.info(`Updated AI review for ${file.filename}`);
+            //         continue;
+            //       } else {
+            //         await octokit.rest.pulls.createReviewComment({
+            //           owner,
+            //           repo,
+            //           pull_number: pr.number,
+            //           commit_id: commitSha,
+            //           path: file.filename,
+            //           line,
+            //           side: "RIGHT",
+            //           body: `
+            // ${marker}
+            // 🤖 **AI Code Review**
+            // ${review}
+            // `,
+            //         });
+            //         core.info(`Posted inline review for ${file.filename}`);
+            //         // await octokit.rest.issues.createComment({
+            //         //   owner,
+            //         //   repo,
+            //         //   issue_number: pr.number,
+            //         //   body: commentBody,
+            //         // });
+            //         // core.info(`Posted AI review for ${file.filename}`);
+            //       }
         }
     }
     catch (error) {
