@@ -181,7 +181,7 @@ ${file.patch}
                 continue;
             }
             // Post comment to PR
-            const marker = `<!-- ai-code-reviewer:file=${file.filename} -->`;
+            const marker = `<!-- ai-code-reviewer-FB:file=${file.filename} -->`;
             const commentBody = `
         ${marker}
         **AI Code Review**
