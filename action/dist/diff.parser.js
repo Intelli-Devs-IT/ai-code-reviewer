@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.extractLineNumbersFromPatch = extractLineNumbersFromPatch;
-function extractLineNumbersFromPatch(patch) {
+exports.extractLineNumbersFromPatch2 = extractLineNumbersFromPatch2;
+function extractLineNumbersFromPatch2(patch) {
     const lines = patch.split("\n");
     const commentLines = [];
     let newLineNumber = 0;
@@ -34,3 +34,46 @@ function extractLineNumbersFromPatch(patch) {
     }
     return commentLines;
 }
+async function findExistingComment(octokit, owner, repo, prNumber, filename) {
+    const comments = await octokit.paginate(octokit.rest.issues.listComments, {
+        owner,
+        repo,
+        issue_number: prNumber,
+        per_page: 100,
+    });
+    const marker = `<!-- ai-code-reviewer-FB:file=${filename} -->`;
+    return comments.find((comment) => comment.body && comment.body.includes(marker));
+}
+//  if (existingComment) {
+//         await octokit.rest.issues.updateComment({
+//           owner,
+//           repo,
+//           comment_id: existingComment.id,
+//           body: commentBody,
+//         });
+//         core.info(`Updated AI review for ${file.filename}`);
+//         continue;
+//       } else {
+//         await octokit.rest.pulls.createReviewComment({
+//           owner,
+//           repo,
+//           pull_number: pr.number,
+//           commit_id: commitSha,
+//           path: file.filename,
+//           line,
+//           side: "RIGHT",
+//           body: `
+// ${marker}
+// 🤖 **AI Code Review**
+// ${review}
+// `,
+//         });
+//         core.info(`Posted inline review for ${file.filename}`);
+//         // await octokit.rest.issues.createComment({
+//         //   owner,
+//         //   repo,
+//         //   issue_number: pr.number,
+//         //   body: commentBody,
+//         // });
+//         // core.info(`Posted AI review for ${file.filename}`);
+//       }

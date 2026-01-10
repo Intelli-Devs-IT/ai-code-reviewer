@@ -1,4 +1,4 @@
-export function extractLineNumbersFromPatch(patch: string): number[] {
+export function extractLineNumbersFromPatch2(patch: string): number[] {
   const lines = patch.split("\n");
 
   const commentLines: number[] = [];
@@ -38,3 +38,61 @@ export function extractLineNumbersFromPatch(patch: string): number[] {
 
   return commentLines;
 }
+
+async function findExistingComment(
+  octokit: any,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  filename: string
+) {
+  const comments = await octokit.paginate(octokit.rest.issues.listComments, {
+    owner,
+    repo,
+    issue_number: prNumber,
+    per_page: 100,
+  });
+
+  const marker = `<!-- ai-code-reviewer-FB:file=${filename} -->`;
+
+  return comments.find(
+    (comment: any) => comment.body && comment.body.includes(marker)
+  );
+}
+
+//  if (existingComment) {
+//         await octokit.rest.issues.updateComment({
+//           owner,
+//           repo,
+//           comment_id: existingComment.id,
+//           body: commentBody,
+//         });
+//         core.info(`Updated AI review for ${file.filename}`);
+//         continue;
+//       } else {
+//         await octokit.rest.pulls.createReviewComment({
+//           owner,
+//           repo,
+//           pull_number: pr.number,
+//           commit_id: commitSha,
+//           path: file.filename,
+//           line,
+//           side: "RIGHT",
+//           body: `
+// ${marker}
+// 🤖 **AI Code Review**
+
+// ${review}
+// `,
+//         });
+
+//         core.info(`Posted inline review for ${file.filename}`);
+//         // await octokit.rest.issues.createComment({
+//         //   owner,
+//         //   repo,
+//         //   issue_number: pr.number,
+//         //   body: commentBody,
+//         // });
+
+//         // core.info(`Posted AI review for ${file.filename}`);
+//       }

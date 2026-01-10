@@ -32,39 +32,13 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 const core = __importStar(require("@actions/core"));
 const github = __importStar(require("@actions/github"));
-const openai_1 = __importDefault(require("openai"));
 const llm_huggingface_1 = require("./llm.huggingface");
-const diff_parser_1 = require("./diff.parser");
-const openaiKey = process.env.OPENAI_API_KEY;
-if (!openaiKey)
-    throw new Error("OPENAI_API_KEY not found");
-const openai = new openai_1.default({
-    apiKey: openaiKey,
-});
-const hfKey = process.env.HF_API_KEY;
-if (!hfKey) {
-    core.warning("HF_API_KEY not set, skipping AI reviews");
-}
-const rules = [
-    {
-        description: "Contains console.log (remove before commit)",
-        test: (_, patch) => /\bconsole\.log\b/.test(patch),
-    },
-    {
-        description: "Contains eval() (avoid dynamic execution)",
-        test: (_, patch) => /\beval\s*\(/.test(patch),
-    },
-    {
-        description: "Contains trailing whitespace",
-        test: (_, patch) => /[ \t]+$/m.test(patch),
-    },
-];
+/* =======================
+   Helpers: file filtering
+   ======================= */
 function isCodeFile(filename) {
     return (filename.endsWith(".ts") ||
         filename.endsWith(".js") ||
@@ -77,82 +51,74 @@ function isTestFile(filename) {
 function shouldIgnoreFile(filename) {
     const ignoredPaths = ["node_modules/", "dist/", "build/"];
     const ignoredFiles = ["package-lock.json", "yarn.lock", "pnpm-lock.yaml"];
-    return (ignoredPaths.some((path) => filename.startsWith(path)) ||
+    return (ignoredPaths.some((p) => filename.startsWith(p)) ||
         ignoredFiles.includes(filename));
 }
-class OpenAILLM {
-    async reviewDiff(prompt) {
-        try {
-            const res = await openai.chat.completions.create({
-                model: "gpt-3.5-turbo",
-                messages: [{ role: "user", content: prompt }],
-                max_tokens: 200,
-            });
-            return res.choices[0].message?.content ?? null;
+/* =======================
+   Helpers: diff parsing
+   ======================= */
+function extractLineNumbersFromPatch(patch) {
+    const lines = patch.split("\n");
+    const commentLines = [];
+    let newLineNumber = 0;
+    let inHunk = false;
+    let foundInCurrentHunk = false;
+    for (const line of lines) {
+        // Start of a new hunk
+        if (line.startsWith("@@")) {
+            const match = line.match(/\+(\d+)/);
+            if (match) {
+                newLineNumber = parseInt(match[1], 10) - 1;
+                inHunk = true;
+                foundInCurrentHunk = false;
+            }
+            continue;
         }
-        catch {
-            return null;
+        if (!inHunk)
+            continue;
+        // Context or added lines increase new-file line count
+        if (!line.startsWith("-")) {
+            newLineNumber++;
+        }
+        // First added line in this hunk
+        if (line.startsWith("+") &&
+            !line.startsWith("+++") &&
+            !foundInCurrentHunk) {
+            commentLines.push(newLineNumber);
+            foundInCurrentHunk = true;
         }
     }
+    return commentLines;
 }
-class OllamaLLM {
-    async reviewDiff(prompt) {
-        try {
-            // LOCAL ollama model = "qwen2.5-coder:1.5b"
-            const response = await fetch("http://localhost:11434/api/generate", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    model: "qwen2.5-coder:1.5b",
-                    prompt,
-                    stream: false,
-                }),
-            });
-            const data = await response.json();
-            return data.response;
-        }
-        catch (err) {
-            return null;
-        }
-    }
-}
-async function findExistingComment(octokit, owner, repo, prNumber, filename) {
-    const comments = await octokit.paginate(octokit.rest.issues.listComments, {
-        owner,
-        repo,
-        issue_number: prNumber,
-        per_page: 100,
-    });
-    const marker = `<!-- ai-code-reviewer-FB:file=${filename} -->`;
-    return comments.find((comment) => comment.body && comment.body.includes(marker));
-}
-// function extractLineNumberFromPatch(patch: string): number | null {
-//   const lines = patch.split("\n");
-//   for (const line of lines) {
-//     // Added lines start with "+"
-//     if (line.startsWith("+") && !line.startsWith("+++")) {
-//       return 1; // safe default for new files
-//     }
-//   }
-//   return null;
-// }
+/* =======================
+   Main Action
+   ======================= */
 async function run() {
     try {
-        core.info("🤖 AI Code Reviewer Action started");
         const context = github.context;
         if (!context.payload.pull_request) {
-            core.info("Not a pull request event, skipping.");
+            core.info("Not a pull request event. Skipping.");
             return;
         }
         const pr = context.payload.pull_request;
-        const commitSha = pr.head.sha;
         const { owner, repo } = context.repo;
+        const commitSha = pr.head.sha;
         const token = process.env.GITHUB_TOKEN;
-        if (!token) {
-            throw new Error("GITHUB_TOKEN not found");
-        }
+        if (!token)
+            throw new Error("GITHUB_TOKEN is missing");
         const octokit = github.getOctokit(token);
-        // Fetch changed files
+        /* =======================
+           Init LLM (optional)
+           ======================= */
+        const hfKey = process.env.HF_API_KEY;
+        const llm = hfKey ? new llm_huggingface_1.HuggingFaceLLM(hfKey) : null;
+        if (!llm) {
+            core.warning("HF_API_KEY not set. AI reviews disabled.");
+            return;
+        }
+        /* =======================
+           Fetch PR files
+           ======================= */
         const files = await octokit.paginate(octokit.rest.pulls.listFiles, {
             owner,
             repo,
@@ -171,50 +137,40 @@ async function run() {
             return true;
         });
         core.info(`Reviewing ${codeFiles.length} code files`);
-        // Loop over code files and apply rules
+        /* =======================
+           Review each file
+           ======================= */
         for (const file of codeFiles) {
-            if (!file.patch)
+            const lines = extractLineNumbersFromPatch(file.patch);
+            if (lines.length === 0)
                 continue;
-            const llm = hfKey ? new llm_huggingface_1.HuggingFaceLLM(hfKey) : null;
-            // Build prompt for LLM
             const prompt = `
-You are an expert code reviewer. Analyze the following code changes (diff) and provide concise, actionable suggestions. 
-Do not rewrite the code. Focus on potential issues, best practices, and improvements. Do not repeat the code. Use bullet points.
-
+You are an expert code reviewer.
+Review the following Git diff and give concise, actionable feedback.
+Use bullet points. Do not repeat the code.
 
 File: ${file.filename}
 
 Diff:
 ${file.patch}
 `;
-            const review = await llm?.reviewDiff(prompt);
-            if (!review) {
-                core.warning(`AI review skipped for ${file.filename}`);
+            let review = null;
+            try {
+                review = await llm.reviewDiff(prompt);
+            }
+            catch {
+                core.warning(`AI review failed for ${file.filename}`);
                 continue;
             }
-            const lines = (0, diff_parser_1.extractLineNumbersFromPatch)(file.patch);
-            if (lines.length === 0) {
-                core.warning(`No valid lines found for ${file.filename}`);
+            if (!review || review.length < 30) {
+                core.info(`Low-confidence review skipped for ${file.filename}`);
                 continue;
             }
-            // Optional: Add timestamp or other info like commit hash to review
-            // Post comment to PR
-            const marker = `<!-- ai-code-reviewer-FB:file=${file.filename} -->`;
-            const commentBody = `
-        ${marker}
-        **AI Code Review**
-
-        File: \`${file.filename}\`
-
-        ${review}
-        `;
-            const existingComment = await findExistingComment(octokit, owner, repo, pr.number, file.filename);
+            /* =======================
+               Post inline comments
+               ======================= */
             for (const line of lines) {
-                if (review.length < 30) {
-                    core.info(`Skipping low-confidence review for ${file.filename}`);
-                    continue;
-                }
-                const marker = `<!-- ai-code-reviewer-FB:file=${file.filename}:line=${line} -->`;
+                const marker = `<!-- ai-code-reviewer:file=${file.filename}:line=${line} -->`;
                 await octokit.rest.pulls.createReviewComment({
                     owner,
                     repo,
@@ -232,39 +188,6 @@ ${review}
                 });
                 core.info(`Posted inline review for ${file.filename} at line ${line}`);
             }
-            //       if (existingComment) {
-            //         await octokit.rest.issues.updateComment({
-            //           owner,
-            //           repo,
-            //           comment_id: existingComment.id,
-            //           body: commentBody,
-            //         });
-            //         core.info(`Updated AI review for ${file.filename}`);
-            //         continue;
-            //       } else {
-            //         await octokit.rest.pulls.createReviewComment({
-            //           owner,
-            //           repo,
-            //           pull_number: pr.number,
-            //           commit_id: commitSha,
-            //           path: file.filename,
-            //           line,
-            //           side: "RIGHT",
-            //           body: `
-            // ${marker}
-            // 🤖 **AI Code Review**
-            // ${review}
-            // `,
-            //         });
-            //         core.info(`Posted inline review for ${file.filename}`);
-            //         // await octokit.rest.issues.createComment({
-            //         //   owner,
-            //         //   repo,
-            //         //   issue_number: pr.number,
-            //         //   body: commentBody,
-            //         // });
-            //         // core.info(`Posted AI review for ${file.filename}`);
-            //       }
         }
     }
     catch (error) {
