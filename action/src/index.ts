@@ -98,6 +98,7 @@ async function run() {
 
       for (const rule of rules) {
         if (rule.test(file.filename, file.patch)) {
+          core.info(rule.description);
           core.warning(`[${file.filename}] ${rule.description}`);
         }
       }
