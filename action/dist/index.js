@@ -56,40 +56,50 @@ function shouldIgnoreFile(filename) {
         ignoredFiles.includes(filename));
 }
 /* =======================
+   Helpers: clean model output
+   ======================= */
+function cleanModelOutput(text) {
+    if (!text)
+        return text;
+    // Remove <think>...</think> blocks (DeepSeek / reasoning models)
+    return text
+        .replace(/<think>[\s\S]*?<\/think>/gi, "")
+        .replace(/^\s+|\s+$/g, "")
+        .trim();
+}
+/* =======================
    Helpers: diff parsing
    ======================= */
-function extractLineNumbersFromPatch(patch) {
+function extractLineNumbersFromPatch(patch, maxCommentsPerFile = 3) {
     const lines = patch.split("\n");
     const commentLines = [];
     let newLineNumber = 0;
     let inHunk = false;
-    let foundInCurrentHunk = false;
     for (const line of lines) {
-        // Start of a new hunk
         if (line.startsWith("@@")) {
             const match = line.match(/\+(\d+)/);
             if (match) {
                 newLineNumber = parseInt(match[1], 10) - 1;
                 inHunk = true;
-                foundInCurrentHunk = false;
             }
             continue;
         }
         if (!inHunk)
             continue;
-        // Context or added lines increase new-file line count
+        // Increment line counter for new file
         if (!line.startsWith("-")) {
             newLineNumber++;
         }
-        // First added line in this hunk
+        // Added code line (ignore empty / import-only lines)
         if (line.startsWith("+") &&
             !line.startsWith("+++") &&
-            !foundInCurrentHunk) {
+            line.trim().length > 2 &&
+            !line.includes("import ")) {
             commentLines.push(newLineNumber);
-            foundInCurrentHunk = true;
         }
     }
-    return commentLines;
+    // De-duplicate & limit
+    return Array.from(new Set(commentLines)).slice(0, maxCommentsPerFile);
 }
 /* =======================
    Helpers: fetch existing inline comments
@@ -194,7 +204,8 @@ ${file.patch}
             let review = null;
             const summaryFindings = [];
             try {
-                review = await llm.reviewDiff(prompt);
+                const rawReview = await llm.reviewDiff(prompt);
+                review = cleanModelOutput(rawReview);
             }
             catch {
                 core.warning(`AI review failed for ${file.filename}`);
