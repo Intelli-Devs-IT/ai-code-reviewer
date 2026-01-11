@@ -327,6 +327,7 @@ ${file.patch}
             const confidence = scoreReviewConfidence(review);
             confidenceScores.push(confidence);
             combinedReviewText.push(review.toLowerCase());
+            const risk = determineRiskLevel(confidenceScores, combinedReviewText);
             core.info(`Confidence score for ${file.filename}: ${confidence}`);
             if (confidence < MIN_CONFIDENCE_SCORE) {
                 core.info(`Skipping low-confidence review for ${file.filename}`);
@@ -344,6 +345,7 @@ ${file.patch}
 ${SUMMARY_MARKER}
 🤖 **AI Code Review Summary**
 _Confidence: ${confidence}/100_
+${risk === "high" ? "**🚨 HIGH RISK ISSUES DETECTED 🚨**" : ""}
 
 **Files reviewed:** ${summaryFindings.length}
 
@@ -368,7 +370,6 @@ ${summaryFindings.join("\n\n")}
                 });
                 core.info("Created AI review summary comment");
             }
-            const risk = determineRiskLevel(confidenceScores, combinedReviewText);
             const labelMap = {
                 low: {
                     name: "ai-review: low-risk",
@@ -442,6 +443,10 @@ ${review}
 `,
                 });
                 core.info(`Posted inline review for ${file.filename} at line ${line}`);
+            }
+            if (risk === "high") {
+                core.setFailed("🚨 AI review detected HIGH-RISK issues. Please address them before merging.");
+                return;
             }
         }
     }
