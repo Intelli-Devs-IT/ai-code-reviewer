@@ -134,6 +134,28 @@ function scoreReviewConfidence(review) {
     score -= hedgeHits * 10;
     return Math.max(0, Math.min(100, score));
 }
+function determineRiskLevel(confidenceScores, reviews) {
+    if (confidenceScores.length === 0)
+        return "low";
+    const maxConfidence = Math.max(...confidenceScores);
+    const redFlags = [
+        "security",
+        "race condition",
+        "leak",
+        "authentication",
+        "authorization",
+        "sql",
+        "injection",
+        "token",
+        "crypto",
+    ];
+    const hasRedFlags = reviews.some((text) => redFlags.some((flag) => text.includes(flag)));
+    if (maxConfidence >= 70 && hasRedFlags)
+        return "high";
+    if (maxConfidence >= 55)
+        return "medium";
+    return "low";
+}
 /* =======================
    Helpers: diff parsing
    ======================= */
@@ -167,6 +189,27 @@ function extractLineNumbersFromPatch(patch, maxCommentsPerFile = 3) {
     }
     // De-duplicate & limit
     return Array.from(new Set(commentLines)).slice(0, maxCommentsPerFile);
+}
+/* =======================
+   Helpers: ensure label exists
+   ======================= */
+async function ensureLabel(octokit, owner, repo, name, color, description) {
+    try {
+        await octokit.rest.issues.getLabel({
+            owner,
+            repo,
+            name,
+        });
+    }
+    catch {
+        await octokit.rest.issues.createLabel({
+            owner,
+            repo,
+            name,
+            color,
+            description,
+        });
+    }
 }
 /* =======================
    Helpers: fetch existing inline comments
@@ -271,6 +314,8 @@ ${file.patch}
 `;
             let review = null;
             const summaryFindings = [];
+            const confidenceScores = [];
+            const combinedReviewText = [];
             try {
                 const rawReview = await llm.reviewDiff(prompt);
                 review = cleanModelOutput(rawReview);
@@ -280,6 +325,8 @@ ${file.patch}
                 continue;
             }
             const confidence = scoreReviewConfidence(review);
+            confidenceScores.push(confidence);
+            combinedReviewText.push(review.toLowerCase());
             core.info(`Confidence score for ${file.filename}: ${confidence}`);
             if (confidence < MIN_CONFIDENCE_SCORE) {
                 core.info(`Skipping low-confidence review for ${file.filename}`);
@@ -321,6 +368,53 @@ ${summaryFindings.join("\n\n")}
                 });
                 core.info("Created AI review summary comment");
             }
+            const risk = determineRiskLevel(confidenceScores, combinedReviewText);
+            const labelMap = {
+                low: {
+                    name: "ai-review: low-risk",
+                    color: "2da44e",
+                    description: "AI review found no significant risks",
+                },
+                medium: {
+                    name: "ai-review: medium-risk",
+                    color: "d29922",
+                    description: "AI review found potential issues worth checking",
+                },
+                high: {
+                    name: "ai-review: high-risk",
+                    color: "cf222e",
+                    description: "AI review found high-risk or security-related concerns",
+                },
+            };
+            const selected = labelMap[risk];
+            // Ensure label exists
+            await ensureLabel(octokit, owner, repo, selected.name, selected.color, selected.description);
+            // // Remove old AI labels
+            // await octokit.rest.issues.removeAllLabels({
+            //   owner,
+            //   repo,
+            //   issue_number: pr.number,
+            // });
+            const existingLabels = pr.labels?.map((l) => l.name) ?? [];
+            const aiLabels = existingLabels.filter((l) => l.startsWith("ai-review:"));
+            if (aiLabels.length > 0) {
+                await Promise.all(aiLabels.map(async (label) => {
+                    await octokit.rest.issues.removeLabel({
+                        owner,
+                        repo,
+                        issue_number: pr.number,
+                        name: label,
+                    });
+                }));
+            }
+            // Add new label
+            await octokit.rest.issues.addLabels({
+                owner,
+                repo,
+                issue_number: pr.number,
+                labels: [selected.name],
+            });
+            core.info(`Applied risk label: ${selected.name}`);
             /* =======================
                Post inline comments
                ======================= */
