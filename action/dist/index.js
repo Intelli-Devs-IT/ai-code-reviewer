@@ -68,6 +68,73 @@ function cleanModelOutput(text) {
         .trim();
 }
 /* =======================
+   Helpers: score review confidence
+   ======================= */
+function scoreReviewConfidence(review) {
+    let score = 0;
+    const length = review.length;
+    const lines = review.split("\n");
+    // 1️⃣ Length signal
+    if (length > 400)
+        score += 25;
+    else if (length > 200)
+        score += 15;
+    else if (length > 100)
+        score += 5;
+    // 2️⃣ Structure signal
+    const bulletLines = lines.filter((l) => l.trim().startsWith("-") || l.trim().startsWith("•"));
+    if (bulletLines.length >= 3)
+        score += 20;
+    else if (bulletLines.length >= 1)
+        score += 10;
+    // 3️⃣ Action verbs
+    const actionWords = [
+        "extract",
+        "rename",
+        "remove",
+        "avoid",
+        "add",
+        "validate",
+        "handle",
+        "simplify",
+        "refactor",
+        "guard",
+        "cache",
+        "memoize",
+        "split",
+    ];
+    const actionHits = actionWords.filter((w) => review.toLowerCase().includes(w)).length;
+    score += Math.min(actionHits * 5, 20);
+    // 4️⃣ Specificity (code-related terms)
+    const codeTerms = [
+        "function",
+        "variable",
+        "method",
+        "loop",
+        "async",
+        "promise",
+        "null",
+        "undefined",
+        "type",
+        "interface",
+        "error",
+    ];
+    const codeHits = codeTerms.filter((w) => review.toLowerCase().includes(w)).length;
+    score += Math.min(codeHits * 3, 15);
+    // 5️⃣ Penalize hedging
+    const hedging = [
+        "might",
+        "maybe",
+        "possibly",
+        "unclear",
+        "not sure",
+        "hard to tell",
+    ];
+    const hedgeHits = hedging.filter((w) => review.toLowerCase().includes(w)).length;
+    score -= hedgeHits * 10;
+    return Math.max(0, Math.min(100, score));
+}
+/* =======================
    Helpers: diff parsing
    ======================= */
 function extractLineNumbersFromPatch(patch, maxCommentsPerFile = 3) {
@@ -146,6 +213,7 @@ async function run() {
            Load configuration
            ======================= */
         const config = await (0, load_config_1.loadConfig)(octokit, owner, repo, pr.head.ref);
+        const MIN_CONFIDENCE_SCORE = config.min_confidence || 45;
         if (!config.enabled) {
             core.info("AI reviewer disabled via config");
             return;
@@ -211,8 +279,10 @@ ${file.patch}
                 core.warning(`AI review failed for ${file.filename}`);
                 continue;
             }
-            if (!review || review.length < 30) {
-                core.info(`Low-confidence review skipped for ${file.filename}`);
+            const confidence = scoreReviewConfidence(review);
+            core.info(`Confidence score for ${file.filename}: ${confidence}`);
+            if (confidence < MIN_CONFIDENCE_SCORE) {
+                core.info(`Skipping low-confidence review for ${file.filename}`);
                 continue;
             }
             summaryFindings.push(`### ${file.filename}\n${review}`);
@@ -226,6 +296,7 @@ ${file.patch}
             const summaryBody = `
 ${SUMMARY_MARKER}
 🤖 **AI Code Review Summary**
+_Confidence: ${confidence}/100_
 
 **Files reviewed:** ${summaryFindings.length}
 
@@ -271,6 +342,7 @@ ${summaryFindings.join("\n\n")}
                     body: `
 ${marker}
 🤖 **AI Code Review**
+_Confidence: ${confidence}/100_
 
 ${review}
 `,
