@@ -17,5 +17,8 @@ export const DEFAULT_CONFIG: ReviewerConfig = {
     "dist/**",
     "build/**",
     "node_modules/**",
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
   ],
 };

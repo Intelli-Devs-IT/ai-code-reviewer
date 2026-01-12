@@ -37,6 +37,7 @@ const core = __importStar(require("@actions/core"));
 const github = __importStar(require("@actions/github"));
 const llm_huggingface_1 = require("./llm.huggingface");
 const load_config_1 = require("./load-config");
+const findFunctionStartLine_1 = require("./helpers/findFunctionStartLine");
 /* =======================
    Helpers: file filtering
    ======================= */
@@ -257,6 +258,7 @@ async function run() {
            ======================= */
         const config = await (0, load_config_1.loadConfig)(octokit, owner, repo, pr.head.ref);
         const MIN_CONFIDENCE_SCORE = config.min_confidence || 45;
+        const OVERRIDE_LABEL = "ai-review: override";
         if (!config.enabled) {
             core.info("AI reviewer disabled via config");
             return;
@@ -304,8 +306,19 @@ async function run() {
                 continue;
             const prompt = `
 You are an expert code reviewer.
-Review the following Git diff and give concise, actionable feedback.
-Use bullet points. Do not repeat the code.
+
+Rules:
+- When suggesting a code change, ALWAYS include a GitHub suggestion block.
+- Suggestions must be directly copyable.
+- Do NOT explain inside the suggestion block.
+- Explanations go outside the block.
+- If no change is needed, say "No change required".
+
+Format:
+- Short explanation (1–2 lines)
+- GitHub suggestion block
+
+Review this diff carefully and suggest improvements.
 
 File: ${file.filename}
 
@@ -420,10 +433,15 @@ ${summaryFindings.join("\n\n")}
                Post inline comments
                ======================= */
             for (const line of lines) {
-                const marker = `<!-- ai-code-reviewer-FB:file=${file.filename}:line=${line} -->`;
+                const anchorLine = (0, findFunctionStartLine_1.findFunctionStartLine)(file.patch, line);
+                if (!anchorLine) {
+                    core.info(`Could not determine anchor line for ${file.filename}:${line}`);
+                    continue;
+                }
+                const marker = `<!-- ai-code-reviewer:file=${file.filename}:line=${anchorLine} -->`;
                 const alreadyExists = existingInlineComments.some((comment) => comment.body?.includes(marker));
                 if (alreadyExists) {
-                    core.info(`Skipping duplicate inline comment for ${file.filename}:${line}`);
+                    core.info(`Skipping duplicate inline comment for ${file.filename}:${anchorLine}`);
                     continue;
                 }
                 await octokit.rest.pulls.createReviewComment({
@@ -432,11 +450,11 @@ ${summaryFindings.join("\n\n")}
                     pull_number: pr.number,
                     commit_id: commitSha,
                     path: file.filename,
-                    line,
+                    line: anchorLine,
                     side: "RIGHT",
                     body: `
 ${marker}
-🤖 **AI Code Review**
+🤖 **AI Suggestion**
 _Confidence: ${confidence}/100_
 
 ${review}
@@ -444,9 +462,14 @@ ${review}
                 });
                 core.info(`Posted inline review for ${file.filename} at line ${line}`);
             }
-            if (risk === "high") {
-                core.setFailed("🚨 AI review detected HIGH-RISK issues. Please address them before merging.");
+            const prLabels = pr.labels?.map((l) => l.name) ?? [];
+            const hasOverride = prLabels.includes(OVERRIDE_LABEL);
+            if (risk === "high" && !hasOverride) {
+                core.setFailed("🚨 AI review detected HIGH-RISK issues. Add 'ai-review: override' to bypass.");
                 return;
+            }
+            if (risk === "high" && hasOverride) {
+                core.warning("⚠️ High-risk PR overridden by maintainer label.");
             }
         }
     }

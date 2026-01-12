@@ -12,5 +12,8 @@ exports.DEFAULT_CONFIG = {
         "dist/**",
         "build/**",
         "node_modules/**",
+        "package-lock.json",
+        "yarn.lock",
+        "pnpm-lock.yaml",
     ],
 };

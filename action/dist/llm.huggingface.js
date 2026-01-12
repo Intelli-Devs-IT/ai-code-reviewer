@@ -5,11 +5,23 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.HuggingFaceLLM = void 0;
 const openai_1 = __importDefault(require("openai"));
+const models = [
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B:novita",
+    "Qwen/Qwen2.5-Coder-32B-Instruct:nscale",
+    "deepseek-ai/DeepSeek-Coder-V2-Instruct",
+    "bigcode/starcoder2-15b-instruct",
+    // "microsoft/phi-3-mini:latest",
+    // "mistralai/Mistral-7B-Instruct-v0.1:latest",
+    // "meta-llama/Llama-3-7B-Instruct:latest",
+    // "meta-llama/Llama-3-13B-Instruct:latest",
+    // "meta-llama/Llama-3-70B-Instruct:latest",
+];
 const baseurl = "https://router.huggingface.co/v1";
 class HuggingFaceLLM {
     constructor(apiKey) {
         this.apiKey = apiKey;
-        this.model = "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B:novita";
+        // this.model = "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B:novita";
+        this.model = models[1];
         this.client = new openai_1.default({
             baseURL: baseurl,
             apiKey: this.apiKey,
@@ -18,7 +30,7 @@ class HuggingFaceLLM {
     async reviewDiff(prompt) {
         try {
             const chatCompletion = await this.client.chat.completions.create({
-                model: "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B:novita",
+                model: this.model,
                 messages: [
                     {
                         role: "user",

@@ -2,6 +2,7 @@ import * as core from "@actions/core";
 import * as github from "@actions/github";
 import { HuggingFaceLLM } from "./llm.huggingface";
 import { loadConfig, fileMatchesConfig } from "./load-config";
+import { findFunctionStartLine } from "./helpers/findFunctionStartLine";
 
 /* =======================
    Helpers: file filtering
@@ -367,8 +368,19 @@ async function run() {
 
       const prompt = `
 You are an expert code reviewer.
-Review the following Git diff and give concise, actionable feedback.
-Use bullet points. Do not repeat the code.
+
+Rules:
+- When suggesting a code change, ALWAYS include a GitHub suggestion block.
+- Suggestions must be directly copyable.
+- Do NOT explain inside the suggestion block.
+- Explanations go outside the block.
+- If no change is needed, say "No change required".
+
+Format:
+- Short explanation (1–2 lines)
+- GitHub suggestion block
+
+Review this diff carefully and suggest improvements.
 
 File: ${file.filename}
 
@@ -489,14 +501,6 @@ ${summaryFindings.join("\n\n")}
         selected.color,
         selected.description
       );
-      // await ensureLabel(
-      //   octokit,
-      //   owner,
-      //   repo,
-      //   OVERRIDE_LABEL,
-      //   "8250df",
-      //   "Override AI review merge block (use with caution)"
-      // );
 
       // // Remove old AI labels
       // await octokit.rest.issues.removeAllLabels({
@@ -538,15 +542,22 @@ ${summaryFindings.join("\n\n")}
          ======================= */
 
       for (const line of lines) {
-        const marker = `<!-- ai-code-reviewer-FB:file=${file.filename}:line=${line} -->`;
+        const anchorLine = findFunctionStartLine(file.patch!, line);
 
+        if (!anchorLine) {
+          core.info(
+            `Could not determine anchor line for ${file.filename}:${line}`
+          );
+          continue;
+        }
+        const marker = `<!-- ai-code-reviewer:file=${file.filename}:line=${anchorLine} -->`;
         const alreadyExists = existingInlineComments.some((comment: any) =>
           comment.body?.includes(marker)
         );
 
         if (alreadyExists) {
           core.info(
-            `Skipping duplicate inline comment for ${file.filename}:${line}`
+            `Skipping duplicate inline comment for ${file.filename}:${anchorLine}`
           );
           continue;
         }
@@ -557,11 +568,11 @@ ${summaryFindings.join("\n\n")}
           pull_number: pr.number,
           commit_id: commitSha,
           path: file.filename,
-          line,
+          line: anchorLine,
           side: "RIGHT",
           body: `
 ${marker}
-🤖 **AI Code Review**
+🤖 **AI Suggestion**
 _Confidence: ${confidence}/100_
 
 ${review}
