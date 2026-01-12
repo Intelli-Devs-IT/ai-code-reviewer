@@ -302,6 +302,7 @@ async function run() {
        ======================= */
     const config = await loadConfig(octokit, owner, repo, pr.head.ref);
     const MIN_CONFIDENCE_SCORE = config.min_confidence || 45;
+    const OVERRIDE_LABEL = "ai-review: override";
 
     if (!config.enabled) {
       core.info("AI reviewer disabled via config");
@@ -488,6 +489,14 @@ ${summaryFindings.join("\n\n")}
         selected.color,
         selected.description
       );
+      // await ensureLabel(
+      //   octokit,
+      //   owner,
+      //   repo,
+      //   OVERRIDE_LABEL,
+      //   "8250df",
+      //   "Override AI review merge block (use with caution)"
+      // );
 
       // // Remove old AI labels
       // await octokit.rest.issues.removeAllLabels({
@@ -562,11 +571,18 @@ ${review}
         core.info(`Posted inline review for ${file.filename} at line ${line}`);
       }
 
-      if (risk === "high") {
+      const prLabels = pr.labels?.map((l: any) => l.name) ?? [];
+      const hasOverride = prLabels.includes(OVERRIDE_LABEL);
+
+      if (risk === "high" && !hasOverride) {
         core.setFailed(
-          "🚨 AI review detected HIGH-RISK issues. Please address them before merging."
+          "🚨 AI review detected HIGH-RISK issues. Add 'ai-review: override' to bypass."
         );
         return;
+      }
+
+      if (risk === "high" && hasOverride) {
+        core.warning("⚠️ High-risk PR overridden by maintainer label.");
       }
     }
   } catch (error: any) {
