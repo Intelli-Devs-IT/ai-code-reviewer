@@ -408,10 +408,10 @@ ${file.patch}
 
       core.info(`Confidence score for ${file.filename}: ${confidence}`);
 
-      if (confidence < MIN_CONFIDENCE_SCORE) {
-        core.info(`Skipping low-confidence review for ${file.filename}`);
-        continue;
-      }
+      // if (confidence < MIN_CONFIDENCE_SCORE) {
+      //   core.info(`Skipping low-confidence review for ${file.filename}`);
+      //   continue;
+      // }
 
       summaryFindings.push(`### ${file.filename}\n${review}`);
 

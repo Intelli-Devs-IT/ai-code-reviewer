@@ -342,10 +342,10 @@ ${file.patch}
             combinedReviewText.push(review.toLowerCase());
             const risk = determineRiskLevel(confidenceScores, combinedReviewText);
             core.info(`Confidence score for ${file.filename}: ${confidence}`);
-            if (confidence < MIN_CONFIDENCE_SCORE) {
-                core.info(`Skipping low-confidence review for ${file.filename}`);
-                continue;
-            }
+            // if (confidence < MIN_CONFIDENCE_SCORE) {
+            //   core.info(`Skipping low-confidence review for ${file.filename}`);
+            //   continue;
+            // }
             summaryFindings.push(`### ${file.filename}\n${review}`);
             /* =======================
                Post summary comment
