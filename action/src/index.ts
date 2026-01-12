@@ -5,6 +5,7 @@ import { loadConfig, fileMatchesConfig } from "./load-config";
 import { findFunctionStartLine } from "./helpers/findFunctionStartLine";
 import { extractScopedPatch } from "./helpers/extractScopedPatch";
 import { normalizeReview } from "./helpers/normalizeReview";
+import { getChangedLines } from "./helpers/util.helpers";
 
 /* =======================
    Helpers: file filtering
@@ -544,72 +545,50 @@ ${summaryFindings.join("\n\n")}
          ======================= */
       const reviewedAnchors = new Set<number>();
 
-      for (const line of lines) {
-        const anchorLine = findFunctionStartLine(file.patch!, line);
+      for (const file of files) {
+        if (!file.patch) continue;
 
-        if (reviewedAnchors.has(anchorLine)) {
-          continue;
-        }
+        const changedLines = getChangedLines(file.patch);
 
-        reviewedAnchors.add(anchorLine);
-        const scopedPatch = extractScopedPatch(file.patch!, anchorLine);
-        const prompt = `
+        for (const line of changedLines) {
+          const anchorLine = findFunctionStartLine(file.patch, line);
+
+          // 🚨 CRITICAL FIX: one comment per function
+          if (reviewedAnchors.has(anchorLine)) continue;
+          reviewedAnchors.add(anchorLine);
+
+          const scopedPatch = extractScopedPatch(file.patch, anchorLine);
+
+          const prompt = `
 You are an expert code reviewer.
 
-Review ONLY the change below.
-If you suggest a change, include ONE GitHub suggestion block.
-Rules:
-- Include at most ONE **suggestion** block.
-- If multiple issues exist, suggest the most impactful one.
-- Do NOT explain inside the suggestion block.
-- Explanations go outside the block.
-- If no change is needed, say "No change required".
+Review ONLY the code below.
+If you suggest a change, include EXACTLY ONE GitHub suggestion block.
 
 File: ${file.filename}
-Anchor line: ${anchorLine}
+Function starts at line: ${anchorLine}
 
 Diff:
 ${scopedPatch}
 `;
 
-        const raw = await llm.reviewDiff(prompt);
-        const review = normalizeReview(cleanModelOutput(raw!));
-        if (!anchorLine) {
-          core.info(
-            `Could not determine anchor line for ${file.filename}:${line}`
-          );
-          continue;
+          const raw = await llm.reviewDiff(prompt);
+          const cleaned = normalizeReview(raw!);
+
+          const confidence = scoreReviewConfidence(cleaned);
+          if (confidence < 20) continue;
+
+          await octokit.rest.pulls.createReviewComment({
+            owner,
+            repo,
+            pull_number: pr.number,
+            commit_id: commitSha,
+            path: file.filename,
+            side: "RIGHT",
+            line: anchorLine,
+            body: `🤖 **AI Suggestion**\nConfidence: ${confidence}/100\n\n${cleaned}`,
+          });
         }
-        const marker = `<!-- ai-code-reviewer:file=${file.filename}:line=${anchorLine} -->`;
-        const alreadyExists = existingInlineComments.some((comment: any) =>
-          comment.body?.includes(marker)
-        );
-
-        if (alreadyExists) {
-          core.info(
-            `Skipping duplicate inline comment for ${file.filename}:${anchorLine}`
-          );
-          continue;
-        }
-
-        await octokit.rest.pulls.createReviewComment({
-          owner,
-          repo,
-          pull_number: pr.number,
-          commit_id: commitSha,
-          path: file.filename,
-          line: anchorLine,
-          side: "RIGHT",
-          body: `
-${marker}
-🤖 **AI Suggestion**
-_Confidence: ${confidence}/100_
-
-${review}
-`,
-        });
-
-        core.info(`Posted inline review for ${file.filename} at line ${line}`);
       }
 
       const prLabels = pr.labels?.map((l: any) => l.name) ?? [];

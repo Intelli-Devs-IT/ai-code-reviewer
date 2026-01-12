@@ -2,11 +2,11 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.normalizeReview = normalizeReview;
 function normalizeReview(text) {
-    // remove duplicate explanation blocks
-    const explanationIndex = text.indexOf("Explanation:");
-    const suggestionIndex = text.indexOf("```suggestion");
-    if (explanationIndex !== -1 && suggestionIndex !== -1) {
-        return text.slice(0, suggestionIndex) + text.slice(suggestionIndex);
+    // Keep only the first explanation + first suggestion block
+    const explanationIdx = text.indexOf("Explanation:");
+    const suggestionIdx = text.indexOf("```suggestion");
+    if (explanationIdx !== -1 && suggestionIdx !== -1) {
+        return (text.slice(0, suggestionIdx) + text.slice(suggestionIdx)).trim();
     }
-    return text;
+    return text.trim();
 }

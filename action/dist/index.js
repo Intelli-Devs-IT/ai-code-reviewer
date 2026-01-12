@@ -40,6 +40,7 @@ const load_config_1 = require("./load-config");
 const findFunctionStartLine_1 = require("./helpers/findFunctionStartLine");
 const extractScopedPatch_1 = require("./helpers/extractScopedPatch");
 const normalizeReview_1 = require("./helpers/normalizeReview");
+const util_helpers_1 = require("./helpers/util.helpers");
 /* =======================
    Helpers: file filtering
    ======================= */
@@ -435,60 +436,45 @@ ${summaryFindings.join("\n\n")}
                Post inline comments
                ======================= */
             const reviewedAnchors = new Set();
-            for (const line of lines) {
-                const anchorLine = (0, findFunctionStartLine_1.findFunctionStartLine)(file.patch, line);
-                if (reviewedAnchors.has(anchorLine)) {
+            for (const file of files) {
+                if (!file.patch)
                     continue;
-                }
-                reviewedAnchors.add(anchorLine);
-                const scopedPatch = (0, extractScopedPatch_1.extractScopedPatch)(file.patch, anchorLine);
-                const prompt = `
+                const changedLines = (0, util_helpers_1.getChangedLines)(file.patch);
+                for (const line of changedLines) {
+                    const anchorLine = (0, findFunctionStartLine_1.findFunctionStartLine)(file.patch, line);
+                    // 🚨 CRITICAL FIX: one comment per function
+                    if (reviewedAnchors.has(anchorLine))
+                        continue;
+                    reviewedAnchors.add(anchorLine);
+                    const scopedPatch = (0, extractScopedPatch_1.extractScopedPatch)(file.patch, anchorLine);
+                    const prompt = `
 You are an expert code reviewer.
 
-Review ONLY the change below.
-If you suggest a change, include ONE GitHub suggestion block.
-Rules:
-- Include at most ONE **suggestion** block.
-- If multiple issues exist, suggest the most impactful one.
-- Do NOT explain inside the suggestion block.
-- Explanations go outside the block.
-- If no change is needed, say "No change required".
+Review ONLY the code below.
+If you suggest a change, include EXACTLY ONE GitHub suggestion block.
 
 File: ${file.filename}
-Anchor line: ${anchorLine}
+Function starts at line: ${anchorLine}
 
 Diff:
 ${scopedPatch}
 `;
-                const raw = await llm.reviewDiff(prompt);
-                const review = (0, normalizeReview_1.normalizeReview)(cleanModelOutput(raw));
-                if (!anchorLine) {
-                    core.info(`Could not determine anchor line for ${file.filename}:${line}`);
-                    continue;
+                    const raw = await llm.reviewDiff(prompt);
+                    const cleaned = (0, normalizeReview_1.normalizeReview)(raw);
+                    const confidence = scoreReviewConfidence(cleaned);
+                    if (confidence < 20)
+                        continue;
+                    await octokit.rest.pulls.createReviewComment({
+                        owner,
+                        repo,
+                        pull_number: pr.number,
+                        commit_id: commitSha,
+                        path: file.filename,
+                        side: "RIGHT",
+                        line: anchorLine,
+                        body: `🤖 **AI Suggestion**\nConfidence: ${confidence}/100\n\n${cleaned}`,
+                    });
                 }
-                const marker = `<!-- ai-code-reviewer:file=${file.filename}:line=${anchorLine} -->`;
-                const alreadyExists = existingInlineComments.some((comment) => comment.body?.includes(marker));
-                if (alreadyExists) {
-                    core.info(`Skipping duplicate inline comment for ${file.filename}:${anchorLine}`);
-                    continue;
-                }
-                await octokit.rest.pulls.createReviewComment({
-                    owner,
-                    repo,
-                    pull_number: pr.number,
-                    commit_id: commitSha,
-                    path: file.filename,
-                    line: anchorLine,
-                    side: "RIGHT",
-                    body: `
-${marker}
-🤖 **AI Suggestion**
-_Confidence: ${confidence}/100_
-
-${review}
-`,
-                });
-                core.info(`Posted inline review for ${file.filename} at line ${line}`);
             }
             const prLabels = pr.labels?.map((l) => l.name) ?? [];
             const hasOverride = prLabels.includes(OVERRIDE_LABEL);
