@@ -434,6 +434,27 @@ ${summaryFindings.join("\n\n")}
                ======================= */
             for (const line of lines) {
                 const anchorLine = (0, findFunctionStartLine_1.findFunctionStartLine)(file.patch, line);
+                const scopedPatch = extractScopedPatch(file.patch, anchorLine);
+                const prompt = `
+You are an expert code reviewer.
+
+Review ONLY the change below.
+If you suggest a change, include ONE GitHub suggestion block.
+Rules:
+- Include at most ONE **suggestion** block.
+- If multiple issues exist, suggest the most impactful one.
+- Do NOT explain inside the suggestion block.
+- Explanations go outside the block.
+- If no change is needed, say "No change required".
+
+File: ${file.filename}
+Anchor line: ${anchorLine}
+
+Diff:
+${scopedPatch}
+`;
+                const raw = await llm.reviewDiff(prompt);
+                const review = cleanModelOutput(raw);
                 if (!anchorLine) {
                     core.info(`Could not determine anchor line for ${file.filename}:${line}`);
                     continue;
