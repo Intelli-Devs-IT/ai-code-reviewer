@@ -4,6 +4,7 @@ import { HuggingFaceLLM } from "./llm.huggingface";
 import { loadConfig, fileMatchesConfig } from "./load-config";
 import { findFunctionStartLine } from "./helpers/findFunctionStartLine";
 import { extractScopedPatch } from "./helpers/extractScopedPatch";
+import { normalizeReview } from "./helpers/normalizeReview";
 
 /* =======================
    Helpers: file filtering
@@ -541,9 +542,16 @@ ${summaryFindings.join("\n\n")}
       /* =======================
          Post inline comments
          ======================= */
+      const reviewedAnchors = new Set<number>();
 
       for (const line of lines) {
         const anchorLine = findFunctionStartLine(file.patch!, line);
+
+        if (reviewedAnchors.has(anchorLine)) {
+          continue;
+        }
+
+        reviewedAnchors.add(anchorLine);
         const scopedPatch = extractScopedPatch(file.patch!, anchorLine);
         const prompt = `
 You are an expert code reviewer.
@@ -565,7 +573,7 @@ ${scopedPatch}
 `;
 
         const raw = await llm.reviewDiff(prompt);
-        const review = cleanModelOutput(raw!);
+        const review = normalizeReview(cleanModelOutput(raw!));
         if (!anchorLine) {
           core.info(
             `Could not determine anchor line for ${file.filename}:${line}`
