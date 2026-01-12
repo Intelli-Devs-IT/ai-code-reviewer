@@ -442,16 +442,28 @@ ${summaryFindings.join("\n\n")}
                 const changedLines = (0, util_helpers_1.getChangedLines)(file.patch);
                 for (const line of changedLines) {
                     const anchorLine = (0, findFunctionStartLine_1.findFunctionStartLine)(file.patch, line);
+                    core.debug(`Reviewing ${file.filename} at line ${anchorLine}`);
                     // 🚨 CRITICAL FIX: one comment per function
                     if (reviewedAnchors.has(anchorLine))
                         continue;
                     reviewedAnchors.add(anchorLine);
                     const scopedPatch = (0, extractScopedPatch_1.extractScopedPatch)(file.patch, anchorLine);
+                    core.debug(`Scoped Patch:\n${scopedPatch}`);
                     const prompt = `
 You are an expert code reviewer.
 
-Review ONLY the code below.
-If you suggest a change, include EXACTLY ONE GitHub suggestion block.
+
+Rules:
+- When suggesting a code change, ALWAYS include a GitHub suggestion block.
+- Suggestions must be directly copyable.
+- Do NOT explain inside the suggestion block.
+- Explanations go outside the block.
+- If no change is needed, say "No change required".
+
+Format:
+- Short explanation (1–2 lines)
+- GitHub suggestion block
+Review ONLY the code below carefully and suggest improvements.
 
 File: ${file.filename}
 Function starts at line: ${anchorLine}
