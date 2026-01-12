@@ -3,6 +3,7 @@ import * as github from "@actions/github";
 import { HuggingFaceLLM } from "./llm.huggingface";
 import { loadConfig, fileMatchesConfig } from "./load-config";
 import { findFunctionStartLine } from "./helpers/findFunctionStartLine";
+import { extractScopedPatch } from "./helpers/extractScopedPatch";
 
 /* =======================
    Helpers: file filtering

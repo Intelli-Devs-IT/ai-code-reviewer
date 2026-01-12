@@ -1,4 +1,6 @@
 "use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.extractScopedPatch = extractScopedPatch;
 function extractScopedPatch(patch, anchorLine, contextLines = 20) {
     const lines = patch.split("\n");
     let currentLine = 0;

@@ -38,6 +38,7 @@ const github = __importStar(require("@actions/github"));
 const llm_huggingface_1 = require("./llm.huggingface");
 const load_config_1 = require("./load-config");
 const findFunctionStartLine_1 = require("./helpers/findFunctionStartLine");
+const extractScopedPatch_1 = require("./helpers/extractScopedPatch");
 /* =======================
    Helpers: file filtering
    ======================= */
@@ -434,7 +435,7 @@ ${summaryFindings.join("\n\n")}
                ======================= */
             for (const line of lines) {
                 const anchorLine = (0, findFunctionStartLine_1.findFunctionStartLine)(file.patch, line);
-                const scopedPatch = extractScopedPatch(file.patch, anchorLine);
+                const scopedPatch = (0, extractScopedPatch_1.extractScopedPatch)(file.patch, anchorLine);
                 const prompt = `
 You are an expert code reviewer.
 

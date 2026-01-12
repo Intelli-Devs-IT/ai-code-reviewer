@@ -1,4 +1,4 @@
-function extractScopedPatch(
+export function extractScopedPatch(
   patch: string,
   anchorLine: number,
   contextLines = 20
