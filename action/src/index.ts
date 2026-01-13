@@ -543,27 +543,30 @@ ${summaryFindings.join("\n\n")}
       /* =======================
          Post inline comments
          ======================= */
-      const reviewedAnchors = new Set<number>();
+      const reviewedLines = new Set<number>();
 
-      for (const file of files) {
+      for (const file of codeFiles) {
         if (!file.patch) continue;
 
         const changedLines = getChangedLines(file.patch);
+        if (changedLines.length === 0) continue;
 
-        for (const line of changedLines) {
-          const anchorLine = findFunctionStartLine(file.patch, line);
-          core.debug(`Reviewing ${file.filename} at line ${anchorLine}`);
+        // Pick the first changed line to comment on
+        const targetLine = changedLines[0];
 
-          // 🚨 CRITICAL FIX: one comment per function
-          if (reviewedAnchors.has(anchorLine)) continue;
-          reviewedAnchors.add(anchorLine);
+        // Skip if already reviewed
+        if (reviewedLines.has(targetLine)) continue;
+        reviewedLines.add(targetLine);
 
-          const scopedPatch = extractScopedPatch(file.patch, anchorLine);
-          core.debug(`Scoped Patch:\n${scopedPatch}`);
+        core.debug(
+          `Posting inline comment for ${file.filename} at line ${targetLine}`
+        );
 
-          const prompt = `
+        const scopedPatch = extractScopedPatch(file.patch, targetLine);
+        core.debug(`Scoped Patch:\n${scopedPatch}`);
+
+        const prompt = `
 You are an expert code reviewer.
-
 
 Rules:
 - When suggesting a code change, ALWAYS include a GitHub suggestion block.
@@ -575,20 +578,27 @@ Rules:
 Format:
 - Short explanation (1–2 lines)
 - GitHub suggestion block
+
 Review ONLY the code below carefully and suggest improvements.
 
 File: ${file.filename}
-Function starts at line: ${anchorLine}
+Review starting at line: ${targetLine}
 
 Diff:
 ${scopedPatch}
 `;
 
+        try {
           const raw = await llm.reviewDiff(prompt);
           const cleaned = normalizeReview(raw!);
 
           const confidence = scoreReviewConfidence(cleaned);
-          if (confidence < 20) continue;
+          if (confidence < 20) {
+            core.info(
+              `Skipping low-confidence review for ${file.filename}:${targetLine}`
+            );
+            continue;
+          }
 
           await octokit.rest.pulls.createReviewComment({
             owner,
@@ -597,9 +607,15 @@ ${scopedPatch}
             commit_id: commitSha,
             path: file.filename,
             side: "RIGHT",
-            line: anchorLine,
-            body: `🤖 **AI Suggestion**\nConfidence: ${confidence}/100\n\n${cleaned}`,
+            line: targetLine,
+            body: `🤖 **AI Suggestion** (Confidence: ${confidence}/100)\n\n${cleaned}`,
           });
+
+          core.info(`Posted inline comment for ${file.filename}:${targetLine}`);
+        } catch (error) {
+          core.warning(
+            `Failed to post inline comment for ${file.filename}: ${error}`
+          );
         }
       }
 

@@ -37,7 +37,6 @@ const core = __importStar(require("@actions/core"));
 const github = __importStar(require("@actions/github"));
 const llm_huggingface_1 = require("./llm.huggingface");
 const load_config_1 = require("./load-config");
-const findFunctionStartLine_1 = require("./helpers/findFunctionStartLine");
 const extractScopedPatch_1 = require("./helpers/extractScopedPatch");
 const normalizeReview_1 = require("./helpers/normalizeReview");
 const util_helpers_1 = require("./helpers/util.helpers");
@@ -435,23 +434,24 @@ ${summaryFindings.join("\n\n")}
             /* =======================
                Post inline comments
                ======================= */
-            const reviewedAnchors = new Set();
-            for (const file of files) {
+            const reviewedLines = new Set();
+            for (const file of codeFiles) {
                 if (!file.patch)
                     continue;
                 const changedLines = (0, util_helpers_1.getChangedLines)(file.patch);
-                for (const line of changedLines) {
-                    const anchorLine = (0, findFunctionStartLine_1.findFunctionStartLine)(file.patch, line);
-                    core.debug(`Reviewing ${file.filename} at line ${anchorLine}`);
-                    // 🚨 CRITICAL FIX: one comment per function
-                    if (reviewedAnchors.has(anchorLine))
-                        continue;
-                    reviewedAnchors.add(anchorLine);
-                    const scopedPatch = (0, extractScopedPatch_1.extractScopedPatch)(file.patch, anchorLine);
-                    core.debug(`Scoped Patch:\n${scopedPatch}`);
-                    const prompt = `
+                if (changedLines.length === 0)
+                    continue;
+                // Pick the first changed line to comment on
+                const targetLine = changedLines[0];
+                // Skip if already reviewed
+                if (reviewedLines.has(targetLine))
+                    continue;
+                reviewedLines.add(targetLine);
+                core.debug(`Posting inline comment for ${file.filename} at line ${targetLine}`);
+                const scopedPatch = (0, extractScopedPatch_1.extractScopedPatch)(file.patch, targetLine);
+                core.debug(`Scoped Patch:\n${scopedPatch}`);
+                const prompt = `
 You are an expert code reviewer.
-
 
 Rules:
 - When suggesting a code change, ALWAYS include a GitHub suggestion block.
@@ -463,19 +463,23 @@ Rules:
 Format:
 - Short explanation (1–2 lines)
 - GitHub suggestion block
+
 Review ONLY the code below carefully and suggest improvements.
 
 File: ${file.filename}
-Function starts at line: ${anchorLine}
+Review starting at line: ${targetLine}
 
 Diff:
 ${scopedPatch}
 `;
+                try {
                     const raw = await llm.reviewDiff(prompt);
                     const cleaned = (0, normalizeReview_1.normalizeReview)(raw);
                     const confidence = scoreReviewConfidence(cleaned);
-                    if (confidence < 20)
+                    if (confidence < 20) {
+                        core.info(`Skipping low-confidence review for ${file.filename}:${targetLine}`);
                         continue;
+                    }
                     await octokit.rest.pulls.createReviewComment({
                         owner,
                         repo,
@@ -483,9 +487,13 @@ ${scopedPatch}
                         commit_id: commitSha,
                         path: file.filename,
                         side: "RIGHT",
-                        line: anchorLine,
-                        body: `🤖 **AI Suggestion**\nConfidence: ${confidence}/100\n\n${cleaned}`,
+                        line: targetLine,
+                        body: `🤖 **AI Suggestion** (Confidence: ${confidence}/100)\n\n${cleaned}`,
                     });
+                    core.info(`Posted inline comment for ${file.filename}:${targetLine}`);
+                }
+                catch (error) {
+                    core.warning(`Failed to post inline comment for ${file.filename}: ${error}`);
                 }
             }
             const prLabels = pr.labels?.map((l) => l.name) ?? [];

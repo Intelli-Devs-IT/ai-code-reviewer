@@ -4,33 +4,24 @@
 export function getChangedLines(patch: string): number[] {
   const lines = patch.split("\n");
   const changedLines: number[] = [];
-
-  let currentLine = 0;
+  let newFileLineNum = 0;
 
   for (const line of lines) {
-    // Hunk header: @@ -a,b +c,d @@
     if (line.startsWith("@@")) {
       const match = line.match(/\+(\d+)/);
       if (match) {
-        currentLine = parseInt(match[1], 10) - 1;
+        newFileLineNum = parseInt(match[1], 10);
       }
       continue;
     }
 
-    // Removed lines don't advance the new-file line counter
-    if (line.startsWith("-")) {
-      continue;
+    // Only count lines that exist in the new file
+    if (!line.startsWith("-")) {
+      if (line.startsWith("+") && !line.startsWith("+++")) {
+        changedLines.push(newFileLineNum);
+      }
+      newFileLineNum++;
     }
-
-    // Added line
-    if (line.startsWith("+")) {
-      currentLine++;
-      changedLines.push(currentLine);
-      continue;
-    }
-
-    // Context line
-    currentLine++;
   }
 
   return changedLines;
