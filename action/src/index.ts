@@ -6,6 +6,12 @@ import { findFunctionStartLine } from "./helpers/findFunctionStartLine";
 import { extractScopedPatch } from "./helpers/extractScopedPatch";
 import { normalizeReview } from "./helpers/normalizeReview";
 import { getChangedLines } from "./helpers/util.helpers";
+import { applyRiskLabel } from "./helpers/riskLabels";
+import { extractFunctionsFromSource } from "./utils/ast-function-extractor";
+import {
+  getFunctionReviewTargets,
+  shouldUseScopedReviewFallback,
+} from "./helpers/functionReviewTargets";
 
 /* =======================
    Helpers: file filtering
@@ -279,6 +285,36 @@ async function getExistingSummaryComment(
   return comments.find((c: any) => c.body?.includes(SUMMARY_MARKER));
 }
 
+async function getFileSourceFromRef(
+  octokit: any,
+  owner: string,
+  repo: string,
+  path: string,
+  ref: string
+): Promise<string | null> {
+  try {
+    const { data } = await octokit.rest.repos.getContent({
+      owner,
+      repo,
+      path,
+      ref,
+    });
+
+    if (Array.isArray(data) || !("content" in data)) {
+      return null;
+    }
+
+    if (data.encoding !== "base64") {
+      return null;
+    }
+
+    return Buffer.from(data.content, "base64").toString("utf8");
+  } catch (error) {
+    core.warning(`Failed to fetch full source for ${path}: ${error}`);
+    return null;
+  }
+}
+
 /* =======================
    Main Action
    ======================= */
@@ -360,6 +396,8 @@ async function run() {
       .slice(0, config.max_files);
 
     core.info(`Reviewing ${codeFiles.length} code files`);
+    const reviewedFunctionKeys = new Set<string>();
+    const reviewedScopedLines = new Set<string>();
 
     /* =======================
        Review each file
@@ -505,58 +543,131 @@ ${summaryFindings.join("\n\n")}
         selected.description
       );
 
-      // // Remove old AI labels
-      // await octokit.rest.issues.removeAllLabels({
-      //   owner,
-      //   repo,
-      //   issue_number: pr.number,
-      // });
-      const existingLabels: string[] = pr.labels?.map((l: any) => l.name) ?? [];
+      const riskLabels = Object.values(labelMap).map((label) => label.name);
 
-      const aiLabels: string[] = existingLabels.filter((l) =>
-        l.startsWith("ai-review:")
-      );
-
-      if (aiLabels.length > 0) {
-        await Promise.all(
-          aiLabels.map(async (label) => {
-            await octokit.rest.issues.removeLabel({
-              owner,
-              repo,
-              issue_number: pr.number,
-              name: label,
-            });
-          })
-        );
-      }
-
-      // Add new label
-      await octokit.rest.issues.addLabels({
+      await applyRiskLabel(
+        octokit,
         owner,
         repo,
-        issue_number: pr.number,
-        labels: [selected.name],
-      });
+        pr.number,
+        selected.name,
+        riskLabels,
+        core
+      );
 
       core.info(`Applied risk label: ${selected.name}`);
 
       /* =======================
          Post inline comments
          ======================= */
-      const reviewedLines = new Set<number>();
-
       for (const file of codeFiles) {
         if (!file.patch) continue;
 
         const changedLines = getChangedLines(file.patch);
         if (changedLines.length === 0) continue;
 
+        const sourceCode = await getFileSourceFromRef(
+          octokit,
+          owner,
+          repo,
+          file.filename,
+          commitSha
+        );
+
+        if (sourceCode === null) {
+          continue;
+        }
+
+        const extractedFunctions = extractFunctionsFromSource(
+          sourceCode,
+          file.filename
+        );
+        const functionTargets = getFunctionReviewTargets(
+          file.filename,
+          extractedFunctions,
+          changedLines,
+          reviewedFunctionKeys
+        );
+
+        if (!shouldUseScopedReviewFallback(extractedFunctions)) {
+          for (const target of functionTargets) {
+            core.debug(
+              `Posting inline comment for ${file.filename} at line ${target.commentLine}`
+            );
+
+            const prompt = `
+You are an expert code reviewer.
+
+Review ONLY the changed function below.
+
+Rules:
+- Focus on real bugs, security issues, logic problems, missing edge cases, or maintainability problems.
+- Include EXACTLY ONE GitHub suggestion block only if you are confident.
+- Keep the explanation short.
+- Do not mention unrelated code.
+- Do not review outside this function.
+- If there is no meaningful issue, return an empty response.
+
+Changed function:
+
+\`\`\`ts
+${target.fn.text}
+\`\`\`
+
+Relevant patch:
+
+\`\`\`diff
+${file.patch}
+\`\`\`
+`;
+
+            try {
+              const raw = await llm.reviewDiff(prompt);
+              const cleaned = normalizeReview(cleanModelOutput(raw!));
+
+              if (!cleaned.trim()) {
+                continue;
+              }
+
+              const confidence = scoreReviewConfidence(cleaned);
+              if (confidence < 20) {
+                core.info(
+                  `Skipping low-confidence review for ${file.filename}:${target.commentLine}`
+                );
+                continue;
+              }
+
+              await octokit.rest.pulls.createReviewComment({
+                owner,
+                repo,
+                pull_number: pr.number,
+                commit_id: commitSha,
+                path: file.filename,
+                side: "RIGHT",
+                line: target.commentLine,
+                body: `🤖 **AI Suggestion** (Confidence: ${confidence}/100)\n\n${cleaned}`,
+              });
+
+              core.info(
+                `Posted inline comment for ${file.filename}:${target.commentLine}`
+              );
+            } catch (error) {
+              core.warning(
+                `Failed to post inline comment for ${file.filename}: ${error}`
+              );
+            }
+          }
+
+          continue;
+        }
+
         // Pick the first changed line to comment on
         const targetLine = changedLines[0];
 
         // Skip if already reviewed
-        if (reviewedLines.has(targetLine)) continue;
-        reviewedLines.add(targetLine);
+        const scopedReviewKey = `${file.filename}:${targetLine}`;
+        if (reviewedScopedLines.has(scopedReviewKey)) continue;
+        reviewedScopedLines.add(scopedReviewKey);
 
         core.debug(
           `Posting inline comment for ${file.filename} at line ${targetLine}`
