@@ -10,7 +10,7 @@
 6. AST-based function extraction
 7. Changed-function matching
 8. LLM review generation
-9. Optional security-focused prompt mode
+9. Configurable inline prompt modes
 10. Model output cleanup
 11. Confidence scoring
 12. Inline comment posting
@@ -70,6 +70,7 @@ Block Merge if High Risk
 * Review changed functions, not entire files.
 * One changed function should produce at most one inline review.
 * Large changed functions should be reviewed through a focused excerpt around changed lines.
+* Review strictness is configurable and defaults to balanced behavior.
 * Security review mode is opt-in through `.ai-reviewer.yml` and should not change default prompt behavior when disabled.
 * Inline comments should be attached to changed lines whenever possible.
 * If a function start line is not commentable, use a changed line inside that function.

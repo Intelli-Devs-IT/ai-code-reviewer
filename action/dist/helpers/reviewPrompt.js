@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildChangedFunctionReviewPrompt = buildChangedFunctionReviewPrompt;
 exports.buildScopedReviewPrompt = buildScopedReviewPrompt;
-function buildChangedFunctionReviewPrompt({ functionText, patch, isFocusedContext, securityReviewEnabled = false, }) {
+function buildChangedFunctionReviewPrompt({ functionText, patch, isFocusedContext, securityReviewEnabled = false, reviewStrictness = "balanced", }) {
     return `
 You are a senior code reviewer.
 
@@ -10,7 +10,7 @@ Review ONLY the changed function below.
 
 ${isFocusedContext ? "You are reviewing a focused excerpt from a larger function. Review only the provided excerpt and relevant patch. Do not assume unseen code unless the issue is directly supported by the provided context." : ""}
 
-${buildReviewRules(securityReviewEnabled, "function")}
+${buildReviewRules(securityReviewEnabled, reviewStrictness, "function")}
 
 Changed function:
 
@@ -25,11 +25,11 @@ ${patch}
 \`\`\`
 `;
 }
-function buildScopedReviewPrompt({ fileName, targetLine, scopedPatch, securityReviewEnabled = false, }) {
+function buildScopedReviewPrompt({ fileName, targetLine, scopedPatch, securityReviewEnabled = false, reviewStrictness = "balanced", }) {
     return `
 You are a senior code reviewer.
 
-${buildReviewRules(securityReviewEnabled, "scoped diff")}
+${buildReviewRules(securityReviewEnabled, reviewStrictness, "scoped diff")}
 
 Review ONLY the code below carefully and suggest improvements.
 
@@ -40,7 +40,7 @@ Diff:
 ${scopedPatch}
 `;
 }
-function buildReviewRules(securityReviewEnabled, reviewedScope) {
+function buildReviewRules(securityReviewEnabled, reviewStrictness, reviewedScope) {
     const securityRules = securityReviewEnabled
         ? `
 Security review mode is enabled.
@@ -48,8 +48,9 @@ Security review mode is enabled.
 - Severe non-security bugs may still be reported when they are clearly supported by the provided code.
 `
         : "";
+    const strictnessRules = buildStrictnessRules(reviewStrictness);
     return `Rules:
-${securityRules}- Focus only on meaningful issues: real bugs, security vulnerabilities, authentication or authorization mistakes, unsafe data handling, null or undefined edge cases, broken async behavior, incorrect error handling, race conditions, data loss risks, incorrect business logic, or serious maintainability issues that can cause bugs.
+${securityRules}${strictnessRules}- Focus only on meaningful issues: real bugs, security vulnerabilities, authentication or authorization mistakes, unsafe data handling, null or undefined edge cases, broken async behavior, incorrect error handling, race conditions, data loss risks, incorrect business logic, or serious maintainability issues that can cause bugs.
 - Avoid comments about formatting, naming preference, minor style choices, harmless refactoring, subjective readability, missing comments, or generic "add tests" advice unless a specific bug risk exists.
 - Do not review unchanged code, unrelated code, or code outside this ${reviewedScope}.
 - If there is no meaningful issue, return exactly: NO_REVIEW
@@ -74,4 +75,23 @@ Short explanation of why it matters.
 
 SUGGESTION:
 Optional GitHub suggestion block only if safe and exact.`;
+}
+function buildStrictnessRules(reviewStrictness) {
+    if (reviewStrictness === "lenient") {
+        return `Review strictness: lenient.
+- Allow useful maintainability issues and clear refactoring suggestions when they are tied to a concrete bug risk, safety improvement, or repeated practical problem.
+- Medium-confidence reviews are acceptable when the issue is specific and useful.
+- Still avoid pure formatting, naming preference, generic cleanup, or subjective style comments.
+`;
+    }
+    if (reviewStrictness === "strict") {
+        return `Review strictness: strict.
+- Only report high-confidence, high-impact issues: real bugs, security issues, data loss, authentication or permission mistakes, broken async behavior, serious logic errors, or maintainability risks likely to cause bugs.
+- Skip weak style, refactor-only, speculative, or low-impact comments.
+- Strongly prefer NO_REVIEW when the issue is not clearly meaningful and directly supported by the provided code.
+`;
+    }
+    return `Review strictness: balanced.
+- Use the default review bar: report meaningful bugs, edge cases, security issues, and serious maintainability issues while avoiding noisy comments.
+`;
 }

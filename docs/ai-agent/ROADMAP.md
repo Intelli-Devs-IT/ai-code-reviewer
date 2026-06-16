@@ -22,6 +22,7 @@
 * one review per changed function
 * large function focused-context handling
 * optional security review mode
+* configurable review strictness
 
 ## Current Focus
 
@@ -33,6 +34,7 @@ Goals:
 * avoid unnecessary suggestion blocks
 * make comments more actionable
 * skip reviews when there is no meaningful issue
+* let repositories choose lenient, balanced, or strict review behavior
 * improve summary quality
 * improve risk explanation
 
@@ -45,6 +47,7 @@ Goals:
 * improve suggestion-block rules
 * improve confidence scoring based on review quality
 * add tests for weak output filtering
+* configurable review strictness: completed
 
 ### Phase 2: Large Function Handling
 

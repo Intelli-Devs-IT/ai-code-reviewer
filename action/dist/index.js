@@ -35,6 +35,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 const core = __importStar(require("@actions/core"));
 const github = __importStar(require("@actions/github"));
+const config_1 = require("./config");
 const llm_huggingface_1 = require("./llm.huggingface");
 const load_config_1 = require("./load-config");
 const extractScopedPatch_1 = require("./helpers/extractScopedPatch");
@@ -275,6 +276,8 @@ async function run() {
         const MIN_CONFIDENCE_SCORE = config.min_confidence || 45;
         const OVERRIDE_LABEL = "ai-review: override";
         const securityReviewEnabled = config.security_review?.enabled === true;
+        const reviewStrictness = config.review?.strictness ?? "balanced";
+        const INLINE_CONFIDENCE_THRESHOLD = (0, config_1.getInlineConfidenceThreshold)(reviewStrictness);
         if (!config.enabled) {
             core.info("AI reviewer disabled via config");
             return;
@@ -410,6 +413,7 @@ ${file.patch}
                             patch: file.patch,
                             isFocusedContext: reviewContext.isFocused,
                             securityReviewEnabled,
+                            reviewStrictness,
                         });
                         try {
                             const raw = await llm.reviewDiff(prompt);
@@ -418,7 +422,7 @@ ${file.patch}
                                 continue;
                             }
                             const confidence = scoreReviewConfidence(cleaned);
-                            if (confidence < 20) {
+                            if (confidence < INLINE_CONFIDENCE_THRESHOLD) {
                                 core.info(`Skipping low-confidence review for ${file.filename}:${target.commentLine}`);
                                 continue;
                             }
@@ -464,6 +468,7 @@ ${file.patch}
                     targetLine,
                     scopedPatch,
                     securityReviewEnabled,
+                    reviewStrictness,
                 });
                 try {
                     const raw = await llm.reviewDiff(prompt);
@@ -472,7 +477,7 @@ ${file.patch}
                         continue;
                     }
                     const confidence = scoreReviewConfidence(cleaned);
-                    if (confidence < 20) {
+                    if (confidence < INLINE_CONFIDENCE_THRESHOLD) {
                         core.info(`Skipping low-confidence review for ${file.filename}:${targetLine}`);
                         continue;
                     }

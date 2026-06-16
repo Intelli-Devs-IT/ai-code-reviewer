@@ -41,4 +41,27 @@ Current review behavior is centered on changed functions when AST extraction suc
 
 Configuration is loaded from `.ai-reviewer.yml` when available. Agents changing configuration behavior must update tests and documentation in the same task.
 
+Review strictness can be configured with `review.strictness`. It defaults to `balanced` when the field is missing.
+
 Optional security-focused inline review can be enabled with `security_review.enabled: true`. It is disabled by default when the field is missing.
+
+Example `.ai-reviewer.yml`:
+
+```yaml
+enabled: true
+max_files: 5
+
+include:
+  - "**/*.ts"
+  - "**/*.js"
+
+exclude:
+  - "**/*.spec.ts"
+  - "dist/**"
+
+review:
+  strictness: balanced
+
+security_review:
+  enabled: false
+```

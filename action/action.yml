@@ -3,5 +3,5 @@ description: "AI-based code review for pull requests"
 author: "Fru Boris"
 
 runs:
-  using: "node20"
+  using: "node24"
   main: "dist/index.js"

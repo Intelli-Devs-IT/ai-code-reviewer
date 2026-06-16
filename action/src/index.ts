@@ -1,5 +1,6 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
+import { getInlineConfidenceThreshold } from "./config";
 import { HuggingFaceLLM } from "./llm.huggingface";
 import { loadConfig, fileMatchesConfig } from "./load-config";
 import { findFunctionStartLine } from "./helpers/findFunctionStartLine";
@@ -348,6 +349,9 @@ async function run() {
     const MIN_CONFIDENCE_SCORE = config.min_confidence || 45;
     const OVERRIDE_LABEL = "ai-review: override";
     const securityReviewEnabled = config.security_review?.enabled === true;
+    const reviewStrictness = config.review?.strictness ?? "balanced";
+    const INLINE_CONFIDENCE_THRESHOLD =
+      getInlineConfidenceThreshold(reviewStrictness);
 
     if (!config.enabled) {
       core.info("AI reviewer disabled via config");
@@ -564,6 +568,7 @@ ${file.patch}
               patch: file.patch,
               isFocusedContext: reviewContext.isFocused,
               securityReviewEnabled,
+              reviewStrictness,
             });
 
             try {
@@ -575,7 +580,7 @@ ${file.patch}
               }
 
               const confidence = scoreReviewConfidence(cleaned);
-              if (confidence < 20) {
+              if (confidence < INLINE_CONFIDENCE_THRESHOLD) {
                 core.info(
                   `Skipping low-confidence review for ${file.filename}:${target.commentLine}`
                 );
@@ -646,6 +651,7 @@ ${file.patch}
           targetLine,
           scopedPatch,
           securityReviewEnabled,
+          reviewStrictness,
         });
 
         try {
@@ -657,7 +663,7 @@ ${file.patch}
           }
 
           const confidence = scoreReviewConfidence(cleaned);
-          if (confidence < 20) {
+          if (confidence < INLINE_CONFIDENCE_THRESHOLD) {
             core.info(
               `Skipping low-confidence review for ${file.filename}:${targetLine}`
             );
