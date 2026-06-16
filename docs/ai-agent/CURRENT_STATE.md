@@ -16,6 +16,8 @@ This file describes what the project currently does. Treat the codebase as the f
 * Unchanged functions are ignored by the AST-based inline review path.
 * Summary comment is created or updated.
 * Summary file count is based on unique files that entered inline AST or fallback review.
+* Summary content is concise and based on accepted inline findings across the PR run.
+* Summary findings are deduplicated and include file paths, inline finding count, overall risk, risk analysis, and next steps.
 * Confidence scoring is used to skip weak inline reviews.
 * Risk is classified as low, medium, or high.
 * Risk labels are applied.

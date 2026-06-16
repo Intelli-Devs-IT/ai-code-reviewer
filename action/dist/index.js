@@ -336,8 +336,6 @@ async function run() {
         const reviewedScopedLines = new Set();
         const reviewedFilePaths = new Set();
         const summaryFindings = [];
-        let latestSummaryConfidence = 0;
-        let latestSummaryRisk = "low";
         /* =======================
            Review each file
            ======================= */
@@ -381,14 +379,7 @@ ${file.patch}
             confidenceScores.push(confidence);
             combinedReviewText.push(review.toLowerCase());
             const risk = determineRiskLevel(confidenceScores, combinedReviewText);
-            latestSummaryConfidence = confidence;
-            latestSummaryRisk = risk;
             core.info(`Confidence score for ${file.filename}: ${confidence}`);
-            // if (confidence < MIN_CONFIDENCE_SCORE) {
-            //   core.info(`Skipping low-confidence review for ${file.filename}`);
-            //   continue;
-            // }
-            summaryFindings.push((0, summaryComment_1.formatSummaryFinding)(file.filename, review));
             const labelMap = {
                 low: {
                     name: "ai-review: low-risk",
@@ -486,6 +477,12 @@ ${file.patch}
                                 core.info(`Skipping low-confidence review for ${file.filename}:${target.commentLine}`);
                                 continue;
                             }
+                            summaryFindings.push((0, summaryComment_1.createSummaryFinding)({
+                                filePath: file.filename,
+                                functionName: target.fn.name,
+                                review: cleaned,
+                                risk: determineRiskLevel([confidence], [cleaned.toLowerCase()]),
+                            }));
                             await octokit.rest.pulls.createReviewComment({
                                 owner,
                                 repo,
@@ -564,6 +561,11 @@ ${scopedPatch}
                         core.info(`Skipping low-confidence review for ${file.filename}:${targetLine}`);
                         continue;
                     }
+                    summaryFindings.push((0, summaryComment_1.createSummaryFinding)({
+                        filePath: file.filename,
+                        review: cleaned,
+                        risk: determineRiskLevel([confidence], [cleaned.toLowerCase()]),
+                    }));
                     await octokit.rest.pulls.createReviewComment({
                         owner,
                         repo,
@@ -583,12 +585,10 @@ ${scopedPatch}
             const prLabels = pr.labels?.map((l) => l.name) ?? [];
             const hasOverride = prLabels.includes(OVERRIDE_LABEL);
             if (risk === "high" && !hasOverride) {
-                if (summaryFindings.length > 0) {
+                if (reviewedFilePaths.size > 0) {
                     await upsertSummaryComment(octokit, owner, repo, pr.number, (0, summaryComment_1.buildSummaryBody)({
-                        confidence: latestSummaryConfidence,
-                        risk: latestSummaryRisk,
                         reviewedFilePaths,
-                        summaryFindings,
+                        findings: summaryFindings,
                     }));
                 }
                 core.setFailed("🚨 AI review detected HIGH-RISK issues. Add 'ai-review: override' to bypass.");
@@ -598,15 +598,13 @@ ${scopedPatch}
                 core.warning("⚠️ High-risk PR overridden by maintainer label.");
             }
         }
-        if (summaryFindings.length === 0) {
+        if (reviewedFilePaths.size === 0) {
             core.info("No summary findings to post");
             return;
         }
         await upsertSummaryComment(octokit, owner, repo, pr.number, (0, summaryComment_1.buildSummaryBody)({
-            confidence: latestSummaryConfidence,
-            risk: latestSummaryRisk,
             reviewedFilePaths,
-            summaryFindings,
+            findings: summaryFindings,
         }));
     }
     catch (error) {

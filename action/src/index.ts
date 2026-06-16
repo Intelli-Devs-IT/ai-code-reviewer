@@ -17,7 +17,8 @@ import {
 } from "./helpers/reviewOutput";
 import {
   buildSummaryBody,
-  formatSummaryFinding,
+  createSummaryFinding,
+  SummaryFinding,
   SUMMARY_MARKER,
 } from "./helpers/summaryComment";
 
@@ -426,9 +427,7 @@ async function run() {
     const reviewedFunctionKeys = new Set<string>();
     const reviewedScopedLines = new Set<string>();
     const reviewedFilePaths = new Set<string>();
-    const summaryFindings: string[] = [];
-    let latestSummaryConfidence = 0;
-    let latestSummaryRisk: RiskLevel = "low";
+    const summaryFindings: SummaryFinding[] = [];
 
     /* =======================
        Review each file
@@ -476,8 +475,6 @@ ${file.patch}
       confidenceScores.push(confidence);
       combinedReviewText.push(review.toLowerCase());
       const risk = determineRiskLevel(confidenceScores, combinedReviewText);
-      latestSummaryConfidence = confidence;
-      latestSummaryRisk = risk;
 
       core.info(`Confidence score for ${file.filename}: ${confidence}`);
 
@@ -485,8 +482,6 @@ ${file.patch}
       //   core.info(`Skipping low-confidence review for ${file.filename}`);
       //   continue;
       // }
-
-      summaryFindings.push(formatSummaryFinding(file.filename, review));
 
       /* =======================
           Determine risk level
@@ -643,6 +638,15 @@ ${file.patch}
                 continue;
               }
 
+              summaryFindings.push(
+                createSummaryFinding({
+                  filePath: file.filename,
+                  functionName: target.fn.name,
+                  review: cleaned,
+                  risk: determineRiskLevel([confidence], [cleaned.toLowerCase()]),
+                })
+              );
+
               await octokit.rest.pulls.createReviewComment({
                 owner,
                 repo,
@@ -738,6 +742,14 @@ ${scopedPatch}
             continue;
           }
 
+          summaryFindings.push(
+            createSummaryFinding({
+              filePath: file.filename,
+              review: cleaned,
+              risk: determineRiskLevel([confidence], [cleaned.toLowerCase()]),
+            })
+          );
+
           await octokit.rest.pulls.createReviewComment({
             owner,
             repo,
@@ -761,17 +773,15 @@ ${scopedPatch}
       const hasOverride = prLabels.includes(OVERRIDE_LABEL);
 
       if (risk === "high" && !hasOverride) {
-        if (summaryFindings.length > 0) {
+        if (reviewedFilePaths.size > 0) {
           await upsertSummaryComment(
             octokit,
             owner,
             repo,
             pr.number,
             buildSummaryBody({
-              confidence: latestSummaryConfidence,
-              risk: latestSummaryRisk,
               reviewedFilePaths,
-              summaryFindings,
+              findings: summaryFindings,
             })
           );
         }
@@ -787,7 +797,7 @@ ${scopedPatch}
       }
     }
 
-    if (summaryFindings.length === 0) {
+    if (reviewedFilePaths.size === 0) {
       core.info("No summary findings to post");
       return;
     }
@@ -798,10 +808,8 @@ ${scopedPatch}
       repo,
       pr.number,
       buildSummaryBody({
-        confidence: latestSummaryConfidence,
-        risk: latestSummaryRisk,
         reviewedFilePaths,
-        summaryFindings,
+        findings: summaryFindings,
       })
     );
   } catch (error: any) {

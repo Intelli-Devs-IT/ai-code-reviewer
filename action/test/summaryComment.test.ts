@@ -3,86 +3,137 @@ import test from "node:test";
 
 import {
   buildSummaryBody,
-  formatSummaryFinding,
+  createSummaryFinding,
   SUMMARY_MARKER,
 } from "../src/helpers/summaryComment";
 
-test("multiple reviewed files produce the correct total", () => {
+test("summary includes correct files reviewed count", () => {
   const body = buildSummaryBody({
-    confidence: 80,
-    risk: "medium",
     reviewedFilePaths: new Set(["src/a.ts", "src/b.ts"]),
-    summaryFindings: [
-      formatSummaryFinding("src/a.ts", "First finding"),
-      formatSummaryFinding("src/b.ts", "Second finding"),
+    findings: [
+      createFinding("src/a.ts", "ISSUE:\nFirst issue.", "low"),
+      createFinding("src/b.ts", "ISSUE:\nSecond issue.", "medium"),
     ],
   });
 
-  assert.match(body, /\*\*Files Reviewed:\*\* 2/);
+  assert.match(body, /Files Reviewed: 2/);
 });
 
-test("file count comes from reviewed files, not finding count", () => {
+test("summary includes correct inline findings count", () => {
   const body = buildSummaryBody({
-    confidence: 80,
-    risk: "medium",
-    reviewedFilePaths: new Set(["src/a.ts", "src/b.ts", "src/c.ts"]),
-    summaryFindings: [formatSummaryFinding("src/a.ts", "First finding")],
-  });
-
-  assert.match(body, /\*\*Files Reviewed:\*\* 3/);
-});
-
-test("multiple reviewed functions in one file still count as one file", () => {
-  const reviewedFilePaths = new Set<string>();
-
-  reviewedFilePaths.add("src/a.ts");
-  reviewedFilePaths.add("src/a.ts");
-  reviewedFilePaths.add("src/a.ts");
-
-  const body = buildSummaryBody({
-    confidence: 70,
-    risk: "low",
-    reviewedFilePaths,
-    summaryFindings: [formatSummaryFinding("src/a.ts", "Finding")],
-  });
-
-  assert.match(body, /\*\*Files Reviewed:\*\* 1/);
-});
-
-test("skipped files are not counted", () => {
-  const body = buildSummaryBody({
-    confidence: 75,
-    risk: "low",
-    reviewedFilePaths: new Set(["src/reviewed.ts"]),
-    summaryFindings: [formatSummaryFinding("src/reviewed.ts", "Finding")],
-  });
-
-  assert.match(body, /\*\*Files Reviewed:\*\* 1/);
-  assert.doesNotMatch(body, /src\/skipped\.ts/);
-});
-
-test("summary findings are accumulated instead of overwritten", () => {
-  const body = buildSummaryBody({
-    confidence: 85,
-    risk: "high",
     reviewedFilePaths: new Set(["src/a.ts", "src/b.ts"]),
-    summaryFindings: [
-      formatSummaryFinding("src/a.ts", "First finding"),
-      formatSummaryFinding("src/b.ts", "Second finding"),
+    findings: [
+      createFinding("src/a.ts", "ISSUE:\nFirst issue.", "low"),
+      createFinding("src/b.ts", "ISSUE:\nSecond issue.", "low"),
     ],
   });
 
-  assert.match(body, /### src\/a\.ts\nFirst finding/);
-  assert.match(body, /### src\/b\.ts\nSecond finding/);
+  assert.match(body, /Inline Findings: 2/);
+});
+
+test("summary includes findings from multiple files", () => {
+  const body = buildSummaryBody({
+    reviewedFilePaths: new Set(["src/a.ts", "src/b.ts"]),
+    findings: [
+      createFinding("src/a.ts", "ISSUE:\nFirst issue.", "low"),
+      createFinding("src/b.ts", "ISSUE:\nSecond issue.", "low"),
+    ],
+  });
+
+  assert.match(body, /\* `src\/a\.ts`: First issue\./);
+  assert.match(body, /\* `src\/b\.ts`: Second issue\./);
+});
+
+test("summary does not duplicate repeated findings", () => {
+  const duplicateReview = "ISSUE:\nRepeated null access risk.";
+  const body = buildSummaryBody({
+    reviewedFilePaths: new Set(["src/a.ts"]),
+    findings: [
+      createFinding("src/a.ts", duplicateReview, "medium", "loadUser"),
+      createFinding("src/a.ts", duplicateReview, "medium", "loadUser"),
+    ],
+  });
+
+  assert.match(body, /Inline Findings: 1/);
+});
+
+test("summary risk becomes high if any finding is high risk", () => {
+  const body = buildSummaryBody({
+    reviewedFilePaths: new Set(["src/a.ts", "src/b.ts"]),
+    findings: [
+      createFinding("src/a.ts", "ISSUE:\nLow issue.", "low"),
+      createFinding("src/b.ts", "ISSUE:\nHigh issue.", "high"),
+    ],
+  });
+
+  assert.match(body, /Overall Risk: High/);
+});
+
+test("summary risk becomes medium when medium findings exist without high findings", () => {
+  const body = buildSummaryBody({
+    reviewedFilePaths: new Set(["src/a.ts", "src/b.ts"]),
+    findings: [
+      createFinding("src/a.ts", "ISSUE:\nLow issue.", "low"),
+      createFinding("src/b.ts", "ISSUE:\nMedium issue.", "medium"),
+    ],
+  });
+
+  assert.match(body, /Overall Risk: Medium/);
+});
+
+test("summary risk stays low when there are no findings", () => {
+  const body = buildSummaryBody({
+    reviewedFilePaths: new Set(["src/a.ts"]),
+    findings: [],
+  });
+
+  assert.match(body, /Overall Risk: Low/);
 });
 
 test("summary marker is preserved for comment updates", () => {
   const body = buildSummaryBody({
-    confidence: 90,
-    risk: "low",
     reviewedFilePaths: new Set(["src/a.ts"]),
-    summaryFindings: [formatSummaryFinding("src/a.ts", "Finding")],
+    findings: [],
   });
 
   assert.match(body, new RegExp(SUMMARY_MARKER));
 });
+
+test("no-finding summary message is shown when appropriate", () => {
+  const body = buildSummaryBody({
+    reviewedFilePaths: new Set(["src/a.ts"]),
+    findings: [],
+  });
+
+  assert.match(
+    body,
+    /No high-confidence issues were found in the reviewed changed functions\./
+  );
+});
+
+test("multiple reviewed functions in one file still count as one file", () => {
+  const body = buildSummaryBody({
+    reviewedFilePaths: new Set(["src/a.ts"]),
+    findings: [
+      createFinding("src/a.ts", "ISSUE:\nFirst issue.", "low", "first"),
+      createFinding("src/a.ts", "ISSUE:\nSecond issue.", "low", "second"),
+    ],
+  });
+
+  assert.match(body, /Files Reviewed: 1/);
+  assert.match(body, /Inline Findings: 2/);
+});
+
+function createFinding(
+  filePath: string,
+  review: string,
+  risk: "low" | "medium" | "high",
+  functionName?: string
+) {
+  return createSummaryFinding({
+    filePath,
+    functionName,
+    review,
+    risk,
+  });
+}
