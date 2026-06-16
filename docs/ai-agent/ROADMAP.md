@@ -20,6 +20,7 @@
 * AST-based function extraction
 * changed function matching
 * one review per changed function
+* large function focused-context handling
 
 ## Current Focus
 
@@ -46,10 +47,11 @@ Goals:
 
 ### Phase 2: Large Function Handling
 
-* detect large functions
-* split large functions into smaller review chunks
-* avoid token waste
-* preserve correct line anchoring
+* detect large functions: completed
+* use focused context around changed lines: completed
+* avoid token waste: completed for one-review-per-function flow
+* preserve correct line anchoring: completed
+* split large functions into multiple review chunks: planned
 
 ### Phase 3: Language Expansion
 

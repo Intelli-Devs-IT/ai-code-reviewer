@@ -66,6 +66,7 @@ Block Merge if High Risk
 
 * Review changed functions, not entire files.
 * One changed function should produce at most one inline review.
+* Large changed functions should be reviewed through a focused excerpt around changed lines.
 * Inline comments should be attached to changed lines whenever possible.
 * If a function start line is not commentable, use a changed line inside that function.
 * If AST extraction fails or returns no functions, the old scoped diff fallback can be used.

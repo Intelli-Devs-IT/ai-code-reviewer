@@ -12,6 +12,7 @@ This file describes what the project currently does. Treat the codebase as the f
 * AST function extractor can extract TypeScript/JavaScript functions.
 * Changed lines can be mapped to changed functions.
 * Each changed function is reviewed once within the current run.
+* Large changed functions use focused context around changed lines to reduce token waste.
 * Inline comments are posted near the correct function area.
 * Unchanged functions are ignored by the AST-based inline review path.
 * Summary comment is created or updated.

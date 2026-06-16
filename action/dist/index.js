@@ -420,12 +420,15 @@ ${file.patch}
                 const functionTargets = (0, functionReviewTargets_1.getFunctionReviewTargets)(file.filename, extractedFunctions, changedLines, reviewedFunctionKeys);
                 if (!(0, functionReviewTargets_1.shouldUseScopedReviewFallback)(extractedFunctions)) {
                     for (const target of functionTargets) {
+                        const reviewContext = (0, functionReviewTargets_1.getFunctionReviewContext)(target.fn, changedLines);
                         reviewedFilePaths.add(file.filename);
                         core.debug(`Posting inline comment for ${file.filename} at line ${target.commentLine}`);
                         const prompt = `
 You are a senior code reviewer.
 
 Review ONLY the changed function below.
+
+${reviewContext.isFocused ? "You are reviewing a focused excerpt from a larger function. Review only the provided excerpt and relevant patch. Do not assume unseen code unless the issue is directly supported by the provided context." : ""}
 
 Rules:
 - Focus only on meaningful issues: real bugs, security vulnerabilities, authentication or authorization mistakes, unsafe data handling, null or undefined edge cases, broken async behavior, incorrect error handling, race conditions, data loss risks, incorrect business logic, or serious maintainability issues that can cause bugs.
@@ -457,7 +460,7 @@ Optional GitHub suggestion block only if safe and exact.
 Changed function:
 
 \`\`\`ts
-${target.fn.text}
+${reviewContext.focusedText}
 \`\`\`
 
 Relevant patch:

@@ -8,6 +8,7 @@ import { getChangedLines } from "./helpers/util.helpers";
 import { applyRiskLabel } from "./helpers/riskLabels";
 import { extractFunctionsFromSource } from "./utils/ast-function-extractor";
 import {
+  getFunctionReviewContext,
   getFunctionReviewTargets,
   shouldUseScopedReviewFallback,
 } from "./helpers/functionReviewTargets";
@@ -571,6 +572,10 @@ ${file.patch}
 
         if (!shouldUseScopedReviewFallback(extractedFunctions)) {
           for (const target of functionTargets) {
+            const reviewContext = getFunctionReviewContext(
+              target.fn,
+              changedLines
+            );
             reviewedFilePaths.add(file.filename);
 
             core.debug(
@@ -581,6 +586,8 @@ ${file.patch}
 You are a senior code reviewer.
 
 Review ONLY the changed function below.
+
+${reviewContext.isFocused ? "You are reviewing a focused excerpt from a larger function. Review only the provided excerpt and relevant patch. Do not assume unseen code unless the issue is directly supported by the provided context." : ""}
 
 Rules:
 - Focus only on meaningful issues: real bugs, security vulnerabilities, authentication or authorization mistakes, unsafe data handling, null or undefined edge cases, broken async behavior, incorrect error handling, race conditions, data loss risks, incorrect business logic, or serious maintainability issues that can cause bugs.
@@ -612,7 +619,7 @@ Optional GitHub suggestion block only if safe and exact.
 Changed function:
 
 \`\`\`ts
-${target.fn.text}
+${reviewContext.focusedText}
 \`\`\`
 
 Relevant patch:
