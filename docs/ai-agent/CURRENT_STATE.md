@@ -13,6 +13,7 @@ This file describes what the project currently does. Treat the codebase as the f
 * Changed lines can be mapped to changed functions.
 * Each changed function is reviewed once within the current run.
 * Large changed functions use focused context around changed lines to reduce token waste.
+* Optional security review mode can strengthen inline prompts for security-sensitive code.
 * Inline comments are posted near the correct function area.
 * Unchanged functions are ignored by the AST-based inline review path.
 * Summary comment is created or updated.
@@ -21,6 +22,7 @@ This file describes what the project currently does. Treat the codebase as the f
 * Summary findings are deduplicated and include file paths, inline finding count, overall risk, risk analysis, and next steps.
 * Confidence scoring is used to skip weak inline reviews.
 * Risk is classified as low, medium, or high.
+* Accepted inline findings with strong security indicators can raise risk to high when security review mode is enabled.
 * Risk labels are applied.
 * High risk can block merge.
 * Missing labels should be skipped safely.

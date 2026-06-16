@@ -40,3 +40,5 @@ The action is implemented under `action/`. Runtime TypeScript lives in `action/s
 Current review behavior is centered on changed functions when AST extraction succeeds. If AST extraction returns no functions for a file, the older scoped diff review path remains available as fallback.
 
 Configuration is loaded from `.ai-reviewer.yml` when available. Agents changing configuration behavior must update tests and documentation in the same task.
+
+Optional security-focused inline review can be enabled with `security_review.enabled: true`. It is disabled by default when the field is missing.

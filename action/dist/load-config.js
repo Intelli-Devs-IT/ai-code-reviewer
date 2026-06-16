@@ -49,11 +49,8 @@ async function loadConfig(octokit, owner, repo, ref) {
         if (!("content" in response.data))
             return config_1.DEFAULT_CONFIG;
         const decoded = Buffer.from(response.data.content, "base64").toString("utf-8");
-        const parsed = yaml.load(decoded);
-        return {
-            ...config_1.DEFAULT_CONFIG,
-            ...parsed,
-        };
+        const parsed = (yaml.load(decoded) ?? {});
+        return (0, config_1.mergeReviewerConfig)(parsed);
     }
     catch {
         return config_1.DEFAULT_CONFIG;

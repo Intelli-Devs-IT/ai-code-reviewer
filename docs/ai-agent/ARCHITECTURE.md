@@ -10,13 +10,14 @@
 6. AST-based function extraction
 7. Changed-function matching
 8. LLM review generation
-9. Model output cleanup
-10. Confidence scoring
-11. Inline comment posting
-12. Summary comment creation/update
-13. Risk classification
-14. Risk label handling
-15. Merge blocking
+9. Optional security-focused prompt mode
+10. Model output cleanup
+11. Confidence scoring
+12. Inline comment posting
+13. Summary comment creation/update
+14. Risk classification
+15. Risk label handling
+16. Merge blocking
 
 ## Architecture Diagram
 
@@ -55,11 +56,13 @@ Block Merge if High Risk
 * The GitHub Action entrypoint is `action/src/index.ts`.
 * The compiled action entrypoint is `action/dist/index.js`.
 * Config loading lives in `action/src/load-config.ts`.
+* Inline review prompt formatting lives in `action/src/helpers/reviewPrompt.ts`.
 * Changed line extraction lives in `action/src/helpers/util.helpers.ts`.
 * Scoped patch fallback logic lives in `action/src/helpers/extractScopedPatch.ts`.
 * AST function extraction lives in `action/src/utils/ast-function-extractor.ts`.
 * Changed-function targeting lives in `action/src/helpers/functionReviewTargets.ts`.
 * Summary comment formatting lives in `action/src/helpers/summaryComment.ts`.
+* Risk level classification lives in `action/src/helpers/riskLevel.ts`.
 * Risk label cleanup lives in `action/src/helpers/riskLabels.ts`.
 
 ## Key Principles
@@ -67,6 +70,7 @@ Block Merge if High Risk
 * Review changed functions, not entire files.
 * One changed function should produce at most one inline review.
 * Large changed functions should be reviewed through a focused excerpt around changed lines.
+* Security review mode is opt-in through `.ai-reviewer.yml` and should not change default prompt behavior when disabled.
 * Inline comments should be attached to changed lines whenever possible.
 * If a function start line is not commentable, use a changed line inside that function.
 * If AST extraction fails or returns no functions, the old scoped diff fallback can be used.

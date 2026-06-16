@@ -21,6 +21,7 @@
 * changed function matching
 * one review per changed function
 * large function focused-context handling
+* optional security review mode
 
 ## Current Focus
 
@@ -63,11 +64,13 @@ Goals:
 
 ### Phase 4: Security Review Mode
 
-* security-focused prompt
-* auth and permission checks
-* injection checks
-* secret leakage checks
-* unsafe dependency checks
+* security-focused prompt: completed
+* opt-in `.ai-reviewer.yml` configuration: completed
+* auth and permission checks: prioritized in security mode
+* injection checks: prioritized in security mode
+* secret leakage checks: prioritized in security mode
+* accepted security findings can raise effective risk in security mode: completed
+* unsafe dependency checks: planned
 
 ### Phase 5: Productization
 

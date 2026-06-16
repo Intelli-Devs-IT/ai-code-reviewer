@@ -44,6 +44,8 @@ const ast_function_extractor_1 = require("./utils/ast-function-extractor");
 const functionReviewTargets_1 = require("./helpers/functionReviewTargets");
 const reviewOutput_1 = require("./helpers/reviewOutput");
 const summaryComment_1 = require("./helpers/summaryComment");
+const riskLevel_1 = require("./helpers/riskLevel");
+const reviewPrompt_1 = require("./helpers/reviewPrompt");
 /* =======================
    Helpers: file filtering
    ======================= */
@@ -128,28 +130,6 @@ function scoreReviewConfidence(review) {
     const hedgeHits = hedging.filter((w) => review.toLowerCase().includes(w)).length;
     score -= hedgeHits * 10;
     return Math.max(0, Math.min(100, score));
-}
-function determineRiskLevel(confidenceScores, reviews) {
-    if (confidenceScores.length === 0)
-        return "low";
-    const maxConfidence = Math.max(...confidenceScores);
-    const redFlags = [
-        "security",
-        "race condition",
-        "leak",
-        "authentication",
-        "authorization",
-        "sql",
-        "injection",
-        "token",
-        "crypto",
-    ];
-    const hasRedFlags = reviews.some((text) => redFlags.some((flag) => text.includes(flag)));
-    if (maxConfidence >= 70 && hasRedFlags)
-        return "high";
-    if (maxConfidence >= 55)
-        return "medium";
-    return "low";
 }
 /* =======================
    Helpers: diff parsing
@@ -294,6 +274,7 @@ async function run() {
         const config = await (0, load_config_1.loadConfig)(octokit, owner, repo, pr.head.ref);
         const MIN_CONFIDENCE_SCORE = config.min_confidence || 45;
         const OVERRIDE_LABEL = "ai-review: override";
+        const securityReviewEnabled = config.security_review?.enabled === true;
         if (!config.enabled) {
             core.info("AI reviewer disabled via config");
             return;
@@ -336,6 +317,7 @@ async function run() {
         const reviewedScopedLines = new Set();
         const reviewedFilePaths = new Set();
         const summaryFindings = [];
+        let highestAcceptedFindingRisk = "low";
         /* =======================
            Review each file
            ======================= */
@@ -378,7 +360,7 @@ ${file.patch}
             const confidence = scoreReviewConfidence(review);
             confidenceScores.push(confidence);
             combinedReviewText.push(review.toLowerCase());
-            const risk = determineRiskLevel(confidenceScores, combinedReviewText);
+            const risk = (0, riskLevel_1.determineRiskLevel)(confidenceScores, combinedReviewText);
             core.info(`Confidence score for ${file.filename}: ${confidence}`);
             const labelMap = {
                 low: {
@@ -423,52 +405,12 @@ ${file.patch}
                         const reviewContext = (0, functionReviewTargets_1.getFunctionReviewContext)(target.fn, changedLines);
                         reviewedFilePaths.add(file.filename);
                         core.debug(`Posting inline comment for ${file.filename} at line ${target.commentLine}`);
-                        const prompt = `
-You are a senior code reviewer.
-
-Review ONLY the changed function below.
-
-${reviewContext.isFocused ? "You are reviewing a focused excerpt from a larger function. Review only the provided excerpt and relevant patch. Do not assume unseen code unless the issue is directly supported by the provided context." : ""}
-
-Rules:
-- Focus only on meaningful issues: real bugs, security vulnerabilities, authentication or authorization mistakes, unsafe data handling, null or undefined edge cases, broken async behavior, incorrect error handling, race conditions, data loss risks, incorrect business logic, or serious maintainability issues that can cause bugs.
-- Avoid comments about formatting, naming preference, minor style choices, harmless refactoring, subjective readability, missing comments, or generic "add tests" advice unless a specific bug risk exists.
-- Do not review unchanged code, unrelated code, or code outside this function.
-- If there is no meaningful issue, return exactly: NO_REVIEW
-- Do not include more than one issue.
-- Pick only the most impactful issue.
-- Keep the explanation short.
-- Include a GitHub suggestion block only when the exact replacement code is obvious and safe.
-- Do not include a suggestion block for vague advice.
-- Do not include a suggestion block if the fix requires changing code outside the reviewed function.
-- Do not include multiple suggestion blocks.
-- Do not mention being an AI.
-- Do not include chain-of-thought.
-- Do not output <think> sections.
-
-Use this output format for valid reviews:
-
-ISSUE:
-Short explanation of the problem.
-
-IMPACT:
-Short explanation of why it matters.
-
-SUGGESTION:
-Optional GitHub suggestion block only if safe and exact.
-
-Changed function:
-
-\`\`\`ts
-${reviewContext.focusedText}
-\`\`\`
-
-Relevant patch:
-
-\`\`\`diff
-${file.patch}
-\`\`\`
-`;
+                        const prompt = (0, reviewPrompt_1.buildChangedFunctionReviewPrompt)({
+                            functionText: reviewContext.focusedText,
+                            patch: file.patch,
+                            isFocusedContext: reviewContext.isFocused,
+                            securityReviewEnabled,
+                        });
                         try {
                             const raw = await llm.reviewDiff(prompt);
                             const cleaned = (0, reviewOutput_1.prepareReviewForScoring)(raw);
@@ -480,11 +422,13 @@ ${file.patch}
                                 core.info(`Skipping low-confidence review for ${file.filename}:${target.commentLine}`);
                                 continue;
                             }
+                            const findingRisk = (0, riskLevel_1.determineRiskLevel)([confidence], [cleaned.toLowerCase()], { securitySensitive: securityReviewEnabled });
+                            highestAcceptedFindingRisk = (0, riskLevel_1.getHighestRiskLevel)(highestAcceptedFindingRisk, findingRisk);
                             summaryFindings.push((0, summaryComment_1.createSummaryFinding)({
                                 filePath: file.filename,
                                 functionName: target.fn.name,
                                 review: cleaned,
-                                risk: determineRiskLevel([confidence], [cleaned.toLowerCase()]),
+                                risk: findingRisk,
                             }));
                             await octokit.rest.pulls.createReviewComment({
                                 owner,
@@ -515,44 +459,12 @@ ${file.patch}
                 const scopedPatch = (0, extractScopedPatch_1.extractScopedPatch)(file.patch, targetLine);
                 core.debug(`Scoped Patch:\n${scopedPatch}`);
                 reviewedFilePaths.add(file.filename);
-                const prompt = `
-You are a senior code reviewer.
-
-Rules:
-- Focus only on meaningful issues: real bugs, security vulnerabilities, authentication or authorization mistakes, unsafe data handling, null or undefined edge cases, broken async behavior, incorrect error handling, race conditions, data loss risks, incorrect business logic, or serious maintainability issues that can cause bugs.
-- Avoid comments about formatting, naming preference, minor style choices, harmless refactoring, subjective readability, missing comments, or generic "add tests" advice unless a specific bug risk exists.
-- Do not review unchanged code, unrelated code, or code outside this scoped diff.
-- If there is no meaningful issue, return exactly: NO_REVIEW
-- Do not include more than one issue.
-- Pick only the most impactful issue.
-- Keep the explanation short.
-- Include a GitHub suggestion block only when the exact replacement code is obvious and safe.
-- Do not include a suggestion block for vague advice.
-- Do not include a suggestion block if the fix requires changing code outside the reviewed scope.
-- Do not include multiple suggestion blocks.
-- Do not mention being an AI.
-- Do not include chain-of-thought.
-- Do not output <think> sections.
-
-Use this output format for valid reviews:
-
-ISSUE:
-Short explanation of the problem.
-
-IMPACT:
-Short explanation of why it matters.
-
-SUGGESTION:
-Optional GitHub suggestion block only if safe and exact.
-
-Review ONLY the code below carefully and suggest improvements.
-
-File: ${file.filename}
-Review starting at line: ${targetLine}
-
-Diff:
-${scopedPatch}
-`;
+                const prompt = (0, reviewPrompt_1.buildScopedReviewPrompt)({
+                    fileName: file.filename,
+                    targetLine,
+                    scopedPatch,
+                    securityReviewEnabled,
+                });
                 try {
                     const raw = await llm.reviewDiff(prompt);
                     const cleaned = (0, reviewOutput_1.prepareReviewForScoring)(raw);
@@ -564,10 +476,12 @@ ${scopedPatch}
                         core.info(`Skipping low-confidence review for ${file.filename}:${targetLine}`);
                         continue;
                     }
+                    const findingRisk = (0, riskLevel_1.determineRiskLevel)([confidence], [cleaned.toLowerCase()], { securitySensitive: securityReviewEnabled });
+                    highestAcceptedFindingRisk = (0, riskLevel_1.getHighestRiskLevel)(highestAcceptedFindingRisk, findingRisk);
                     summaryFindings.push((0, summaryComment_1.createSummaryFinding)({
                         filePath: file.filename,
                         review: cleaned,
-                        risk: determineRiskLevel([confidence], [cleaned.toLowerCase()]),
+                        risk: findingRisk,
                     }));
                     await octokit.rest.pulls.createReviewComment({
                         owner,
@@ -587,7 +501,14 @@ ${scopedPatch}
             }
             const prLabels = pr.labels?.map((l) => l.name) ?? [];
             const hasOverride = prLabels.includes(OVERRIDE_LABEL);
-            if (risk === "high" && !hasOverride) {
+            const effectiveRisk = (0, riskLevel_1.getHighestRiskLevel)(risk, highestAcceptedFindingRisk);
+            if (effectiveRisk !== risk) {
+                const selected = labelMap[effectiveRisk];
+                await ensureLabel(octokit, owner, repo, selected.name, selected.color, selected.description);
+                await (0, riskLabels_1.applyRiskLabel)(octokit, owner, repo, pr.number, selected.name, riskLabels, core);
+                core.info(`Applied risk label: ${selected.name}`);
+            }
+            if (effectiveRisk === "high" && !hasOverride) {
                 if (reviewedFilePaths.size > 0) {
                     await upsertSummaryComment(octokit, owner, repo, pr.number, (0, summaryComment_1.buildSummaryBody)({
                         reviewedFilePaths,
@@ -597,7 +518,7 @@ ${scopedPatch}
                 core.setFailed("🚨 AI review detected HIGH-RISK issues. Add 'ai-review: override' to bypass.");
                 return;
             }
-            if (risk === "high" && hasOverride) {
+            if (effectiveRisk === "high" && hasOverride) {
                 core.warning("⚠️ High-risk PR overridden by maintainer label.");
             }
         }

@@ -1,7 +1,7 @@
 import * as github from "@actions/github";
 import * as yaml from "js-yaml";
 import { minimatch } from "minimatch";
-import { DEFAULT_CONFIG, ReviewerConfig } from "./config";
+import { DEFAULT_CONFIG, mergeReviewerConfig, ReviewerConfig } from "./config";
 
 export async function loadConfig(
   octokit: any,
@@ -23,12 +23,9 @@ export async function loadConfig(
       "utf-8"
     );
 
-    const parsed = yaml.load(decoded) as Partial<ReviewerConfig>;
+    const parsed = (yaml.load(decoded) ?? {}) as Partial<ReviewerConfig>;
 
-    return {
-      ...DEFAULT_CONFIG,
-      ...parsed,
-    };
+    return mergeReviewerConfig(parsed);
   } catch {
     return DEFAULT_CONFIG;
   }
