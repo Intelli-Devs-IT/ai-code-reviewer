@@ -87,4 +87,4 @@ Block Merge if High Risk
 ## Current Caveats
 
 * Durable duplicate prevention across reruns should be treated carefully. The code fetches existing inline comments and uses in-run dedupe sets, but agents must verify behavior before claiming broad rerun dedupe.
-* Summary findings are accumulated from accepted inline review findings across the PR run, deduplicated, and posted once after aggregation. Risk calculation for labels and merge blocking still happens in the file review path, so modify it only with a specific task and tests.
+* Summary findings are accumulated from accepted inline review findings across the PR run, deduplicated, and posted once after aggregation. Risk labels and merge blocking are decided once after the file review loop.

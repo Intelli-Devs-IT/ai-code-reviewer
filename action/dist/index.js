@@ -275,7 +275,6 @@ async function run() {
            Load configuration
            ======================= */
         const config = await (0, load_config_1.loadConfig)(octokit, owner, repo, pr.head.ref);
-        const MIN_CONFIDENCE_SCORE = config.min_confidence || 45;
         const OVERRIDE_LABEL = "ai-review: override";
         const securityReviewEnabled = config.security_review?.enabled === true;
         const reviewStrictness = config.review?.strictness ?? "balanced";
@@ -355,251 +354,169 @@ async function run() {
         const reviewedFilePaths = new Set();
         const summaryFindings = [];
         let highestAcceptedFindingRisk = "low";
+        const labelMap = {
+            low: {
+                name: "ai-review: low-risk",
+                color: "2da44e",
+                description: "AI review found no significant risks",
+            },
+            medium: {
+                name: "ai-review: medium-risk",
+                color: "d29922",
+                description: "AI review found potential issues worth checking",
+            },
+            high: {
+                name: "ai-review: high-risk",
+                color: "cf222e",
+                description: "AI review found high-risk or security-related concerns",
+            },
+        };
+        const riskLabels = Object.values(labelMap).map((label) => label.name);
         /* =======================
            Review each file
            ======================= */
         for (const file of codeFiles) {
-            const lines = extractLineNumbersFromPatch(file.patch);
-            const language = (0, modelRouting_1.detectLanguageFromPath)(file.filename);
-            const fileReviewModel = (0, modelRouting_1.resolveModelForFile)({
+            const patch = file.patch;
+            if (!patch)
+                continue;
+            const inlineLanguage = (0, modelRouting_1.detectLanguageFromPath)(file.filename);
+            const inlineReviewModel = (0, modelRouting_1.resolveModelForFile)({
                 filePath: file.filename,
                 config,
                 existingDefaultModel: llm_huggingface_1.DEFAULT_HUGGINGFACE_MODEL,
             });
-            if (lines.length === 0) {
+            if (modelRoutingEnabled) {
+                core.info(`Using routed model for ${file.filename}: ${inlineReviewModel}`);
+            }
+            const changedLines = (0, util_helpers_1.getChangedLines)(patch);
+            if (changedLines.length === 0) {
                 (0, reviewDiagnostics_1.logReviewSkip)(core, {
                     filePath: file.filename,
                     reason: "no_changed_lines",
-                    model: fileReviewModel,
-                    language,
+                    model: inlineReviewModel,
+                    language: inlineLanguage,
                     reviewStrictness,
                     securityReviewEnabled,
                     threshold: INLINE_CONFIDENCE_THRESHOLD,
                 });
                 continue;
             }
-            if (modelRoutingEnabled) {
-                core.info(`Using routed model for ${file.filename}: ${fileReviewModel}`);
-            }
-            const prompt = `
-You are an expert code reviewer.
-
-Rules:
-- When suggesting a code change, ALWAYS include a GitHub suggestion block.
-- Suggestions must be directly copyable.
-- Do NOT explain inside the suggestion block.
-- Explanations go outside the block.
-- If no change is needed, say "No change required".
-
-Format:
-- Short explanation (1–2 lines)
-- GitHub suggestion block
-
-Review this diff carefully and suggest improvements.
-
-File: ${file.filename}
-
-Diff:
-${file.patch}
-`;
-            let review = null;
-            const confidenceScores = [];
-            const combinedReviewText = [];
-            try {
-                const rawReview = await llm.reviewDiff(prompt, modelRoutingEnabled ? fileReviewModel : undefined);
-                review = (0, reviewOutput_1.cleanModelOutput)(rawReview);
-            }
-            catch {
+            const sourceCode = await getFileSourceFromRef(octokit, owner, repo, file.filename, commitSha);
+            if (sourceCode === null) {
                 (0, reviewDiagnostics_1.logReviewSkip)(core, {
                     filePath: file.filename,
-                    reason: "provider_model_call_failed",
-                    model: fileReviewModel,
-                    language,
+                    reason: "source_unavailable",
+                    model: inlineReviewModel,
+                    language: inlineLanguage,
                     reviewStrictness,
                     securityReviewEnabled,
                     threshold: INLINE_CONFIDENCE_THRESHOLD,
                 });
-                core.warning(`AI review failed for ${file.filename}`);
                 continue;
             }
-            const confidence = scoreReviewConfidence(review);
-            confidenceScores.push(confidence);
-            combinedReviewText.push(review.toLowerCase());
-            const risk = (0, riskLevel_1.determineRiskLevel)(confidenceScores, combinedReviewText);
-            core.info(`Confidence score for ${file.filename}: ${confidence}`);
-            const labelMap = {
-                low: {
-                    name: "ai-review: low-risk",
-                    color: "2da44e",
-                    description: "AI review found no significant risks",
-                },
-                medium: {
-                    name: "ai-review: medium-risk",
-                    color: "d29922",
-                    description: "AI review found potential issues worth checking",
-                },
-                high: {
-                    name: "ai-review: high-risk",
-                    color: "cf222e",
-                    description: "AI review found high-risk or security-related concerns",
-                },
-            };
-            const selected = labelMap[risk];
-            // Ensure label exists
-            await ensureLabel(octokit, owner, repo, selected.name, selected.color, selected.description);
-            const riskLabels = Object.values(labelMap).map((label) => label.name);
-            await (0, riskLabels_1.applyRiskLabel)(octokit, owner, repo, pr.number, selected.name, riskLabels, core);
-            core.info(`Applied risk label: ${selected.name}`);
-            /* =======================
-               Post inline comments
-               ======================= */
-            for (const file of codeFiles) {
-                if (!file.patch)
-                    continue;
-                const inlineLanguage = (0, modelRouting_1.detectLanguageFromPath)(file.filename);
-                const inlineReviewModel = (0, modelRouting_1.resolveModelForFile)({
-                    filePath: file.filename,
-                    config,
-                    existingDefaultModel: llm_huggingface_1.DEFAULT_HUGGINGFACE_MODEL,
-                });
-                const changedLines = (0, util_helpers_1.getChangedLines)(file.patch);
-                if (changedLines.length === 0) {
-                    (0, reviewDiagnostics_1.logReviewSkip)(core, {
-                        filePath: file.filename,
-                        reason: "no_changed_lines",
-                        model: inlineReviewModel,
-                        language: inlineLanguage,
-                        reviewStrictness,
+            const extractedFunctions = (0, ast_function_extractor_1.extractFunctionsFromSource)(sourceCode, file.filename);
+            const functionTargets = (0, functionReviewTargets_1.getFunctionReviewTargets)(file.filename, extractedFunctions, changedLines, reviewedFunctionKeys);
+            if (!(0, functionReviewTargets_1.shouldUseScopedReviewFallback)(extractedFunctions) &&
+                functionTargets.length > 0) {
+                for (const target of functionTargets) {
+                    const reviewContext = (0, functionReviewTargets_1.getFunctionReviewContext)(target.fn, changedLines);
+                    reviewedFilePaths.add(file.filename);
+                    core.debug(`Posting inline comment for ${file.filename} at line ${target.commentLine}`);
+                    const prompt = (0, reviewPrompt_1.buildChangedFunctionReviewPrompt)({
+                        functionText: reviewContext.focusedText,
+                        patch,
+                        isFocusedContext: reviewContext.isFocused,
                         securityReviewEnabled,
-                        threshold: INLINE_CONFIDENCE_THRESHOLD,
-                    });
-                    continue;
-                }
-                const sourceCode = await getFileSourceFromRef(octokit, owner, repo, file.filename, commitSha);
-                if (sourceCode === null) {
-                    (0, reviewDiagnostics_1.logReviewSkip)(core, {
-                        filePath: file.filename,
-                        reason: "source_unavailable",
-                        model: inlineReviewModel,
-                        language: inlineLanguage,
                         reviewStrictness,
-                        securityReviewEnabled,
-                        threshold: INLINE_CONFIDENCE_THRESHOLD,
                     });
-                    continue;
-                }
-                const extractedFunctions = (0, ast_function_extractor_1.extractFunctionsFromSource)(sourceCode, file.filename);
-                const functionTargets = (0, functionReviewTargets_1.getFunctionReviewTargets)(file.filename, extractedFunctions, changedLines, reviewedFunctionKeys);
-                if (!(0, functionReviewTargets_1.shouldUseScopedReviewFallback)(extractedFunctions)) {
-                    if (functionTargets.length === 0) {
+                    let raw;
+                    try {
+                        raw = await llm.reviewDiff(prompt, modelRoutingEnabled ? inlineReviewModel : undefined);
+                    }
+                    catch {
                         (0, reviewDiagnostics_1.logReviewSkip)(core, {
                             filePath: file.filename,
-                            reason: "no_changed_functions_found",
+                            functionName: target.fn.name,
+                            reason: "provider_model_call_failed",
                             model: inlineReviewModel,
                             language: inlineLanguage,
                             reviewStrictness,
                             securityReviewEnabled,
                             threshold: INLINE_CONFIDENCE_THRESHOLD,
                         });
+                        core.warning(`AI inline review failed for ${file.filename}`);
+                        continue;
                     }
-                    for (const target of functionTargets) {
-                        const reviewContext = (0, functionReviewTargets_1.getFunctionReviewContext)(target.fn, changedLines);
-                        reviewedFilePaths.add(file.filename);
-                        core.debug(`Posting inline comment for ${file.filename} at line ${target.commentLine}`);
-                        const prompt = (0, reviewPrompt_1.buildChangedFunctionReviewPrompt)({
-                            functionText: reviewContext.focusedText,
-                            patch: file.patch,
-                            isFocusedContext: reviewContext.isFocused,
-                            securityReviewEnabled,
-                            reviewStrictness,
-                        });
-                        let raw;
-                        try {
-                            raw = await llm.reviewDiff(prompt, modelRoutingEnabled ? inlineReviewModel : undefined);
-                        }
-                        catch {
-                            (0, reviewDiagnostics_1.logReviewSkip)(core, {
-                                filePath: file.filename,
-                                functionName: target.fn.name,
-                                reason: "provider_model_call_failed",
-                                model: inlineReviewModel,
-                                language: inlineLanguage,
-                                reviewStrictness,
-                                securityReviewEnabled,
-                                threshold: INLINE_CONFIDENCE_THRESHOLD,
-                            });
-                            core.warning(`AI inline review failed for ${file.filename}`);
-                            continue;
-                        }
-                        const prepared = (0, reviewOutput_1.prepareReviewWithDiagnostics)(raw);
-                        const cleaned = prepared.review;
-                        if (!cleaned) {
-                            (0, reviewDiagnostics_1.logReviewSkip)(core, {
-                                filePath: file.filename,
-                                functionName: target.fn.name,
-                                reason: prepared.skipReason ?? "should_skip_review",
-                                model: inlineReviewModel,
-                                language: inlineLanguage,
-                                reviewStrictness,
-                                securityReviewEnabled,
-                                threshold: INLINE_CONFIDENCE_THRESHOLD,
-                                preview: prepared.normalizedPreview ?? prepared.preview,
-                            });
-                            continue;
-                        }
-                        const confidence = scoreReviewConfidence(cleaned);
-                        if (confidence < INLINE_CONFIDENCE_THRESHOLD) {
-                            (0, reviewDiagnostics_1.logReviewSkip)(core, {
-                                filePath: file.filename,
-                                functionName: target.fn.name,
-                                reason: "confidence_below_threshold",
-                                model: inlineReviewModel,
-                                language: inlineLanguage,
-                                reviewStrictness,
-                                securityReviewEnabled,
-                                confidence,
-                                threshold: INLINE_CONFIDENCE_THRESHOLD,
-                                preview: prepared.normalizedPreview,
-                            });
-                            continue;
-                        }
-                        const findingRisk = (0, riskLevel_1.determineRiskLevel)([confidence], [cleaned.toLowerCase()], { securitySensitive: securityReviewEnabled });
-                        highestAcceptedFindingRisk = (0, riskLevel_1.getHighestRiskLevel)(highestAcceptedFindingRisk, findingRisk);
-                        summaryFindings.push((0, summaryComment_1.createSummaryFinding)({
+                    const prepared = (0, reviewOutput_1.prepareReviewWithDiagnostics)(raw);
+                    const cleaned = prepared.review;
+                    if (!cleaned) {
+                        (0, reviewDiagnostics_1.logReviewSkip)(core, {
                             filePath: file.filename,
                             functionName: target.fn.name,
-                            review: cleaned,
-                            risk: findingRisk,
-                        }));
-                        try {
-                            await octokit.rest.pulls.createReviewComment({
-                                owner,
-                                repo,
-                                pull_number: pr.number,
-                                commit_id: commitSha,
-                                path: file.filename,
-                                side: "RIGHT",
-                                line: target.commentLine,
-                                body: `🤖 **AI Suggestion** (Confidence: ${confidence}/100)\n\n${cleaned}`,
-                            });
-                            core.info(`Posted inline comment for ${file.filename}:${target.commentLine}`);
-                        }
-                        catch (error) {
-                            (0, reviewDiagnostics_1.logReviewSkip)(core, {
-                                filePath: file.filename,
-                                functionName: target.fn.name,
-                                reason: "inline_comment_post_failed",
-                                model: inlineReviewModel,
-                                language: inlineLanguage,
-                                reviewStrictness,
-                                securityReviewEnabled,
-                                threshold: INLINE_CONFIDENCE_THRESHOLD,
-                            });
-                            core.warning(`Failed to post inline comment for ${file.filename}: ${error}`);
-                        }
+                            reason: prepared.skipReason ?? "should_skip_review",
+                            model: inlineReviewModel,
+                            language: inlineLanguage,
+                            reviewStrictness,
+                            securityReviewEnabled,
+                            threshold: INLINE_CONFIDENCE_THRESHOLD,
+                            preview: prepared.normalizedPreview ?? prepared.preview,
+                        });
+                        continue;
                     }
-                    continue;
+                    const confidence = scoreReviewConfidence(cleaned);
+                    if (confidence < INLINE_CONFIDENCE_THRESHOLD) {
+                        (0, reviewDiagnostics_1.logReviewSkip)(core, {
+                            filePath: file.filename,
+                            functionName: target.fn.name,
+                            reason: "confidence_below_threshold",
+                            model: inlineReviewModel,
+                            language: inlineLanguage,
+                            reviewStrictness,
+                            securityReviewEnabled,
+                            confidence,
+                            threshold: INLINE_CONFIDENCE_THRESHOLD,
+                            preview: prepared.normalizedPreview,
+                        });
+                        continue;
+                    }
+                    const findingRisk = (0, riskLevel_1.determineRiskLevel)([confidence], [cleaned.toLowerCase()], { securitySensitive: securityReviewEnabled });
+                    highestAcceptedFindingRisk = (0, riskLevel_1.getHighestRiskLevel)(highestAcceptedFindingRisk, findingRisk);
+                    summaryFindings.push((0, summaryComment_1.createSummaryFinding)({
+                        filePath: file.filename,
+                        functionName: target.fn.name,
+                        review: cleaned,
+                        risk: findingRisk,
+                    }));
+                    try {
+                        await octokit.rest.pulls.createReviewComment({
+                            owner,
+                            repo,
+                            pull_number: pr.number,
+                            commit_id: commitSha,
+                            path: file.filename,
+                            side: "RIGHT",
+                            line: target.commentLine,
+                            body: `🤖 **AI Suggestion** (Confidence: ${confidence}/100)\n\n${cleaned}`,
+                        });
+                        core.info(`Posted inline comment for ${file.filename}:${target.commentLine}`);
+                    }
+                    catch (error) {
+                        (0, reviewDiagnostics_1.logReviewSkip)(core, {
+                            filePath: file.filename,
+                            functionName: target.fn.name,
+                            reason: "inline_comment_post_failed",
+                            model: inlineReviewModel,
+                            language: inlineLanguage,
+                            reviewStrictness,
+                            securityReviewEnabled,
+                            threshold: INLINE_CONFIDENCE_THRESHOLD,
+                        });
+                        core.warning(`Failed to post inline comment for ${file.filename}: ${error}`);
+                    }
                 }
+                continue;
+            }
+            if ((0, functionReviewTargets_1.shouldUseScopedReviewFallback)(extractedFunctions)) {
                 (0, reviewDiagnostics_1.logReviewSkip)(core, {
                     filePath: file.filename,
                     reason: "ast_no_functions_fallback_used",
@@ -609,130 +526,137 @@ ${file.patch}
                     securityReviewEnabled,
                     threshold: INLINE_CONFIDENCE_THRESHOLD,
                 });
-                // Pick the first changed line to comment on
-                const targetLine = changedLines[0];
-                // Skip if already reviewed
-                const scopedReviewKey = `${file.filename}:${targetLine}`;
-                if (reviewedScopedLines.has(scopedReviewKey))
-                    continue;
-                reviewedScopedLines.add(scopedReviewKey);
-                core.debug(`Posting inline comment for ${file.filename} at line ${targetLine}`);
-                const scopedPatch = (0, extractScopedPatch_1.extractScopedPatch)(file.patch, targetLine);
-                core.debug(`Scoped Patch:\n${scopedPatch}`);
-                reviewedFilePaths.add(file.filename);
-                const prompt = (0, reviewPrompt_1.buildScopedReviewPrompt)({
-                    fileName: file.filename,
-                    targetLine,
-                    scopedPatch,
-                    securityReviewEnabled,
-                    reviewStrictness,
-                });
-                let raw;
-                try {
-                    raw = await llm.reviewDiff(prompt, modelRoutingEnabled ? inlineReviewModel : undefined);
-                }
-                catch {
-                    (0, reviewDiagnostics_1.logReviewSkip)(core, {
-                        filePath: file.filename,
-                        reason: "provider_model_call_failed",
-                        model: inlineReviewModel,
-                        language: inlineLanguage,
-                        reviewStrictness,
-                        securityReviewEnabled,
-                        threshold: INLINE_CONFIDENCE_THRESHOLD,
-                    });
-                    core.warning(`AI inline review failed for ${file.filename}`);
-                    continue;
-                }
-                const prepared = (0, reviewOutput_1.prepareReviewWithDiagnostics)(raw);
-                const cleaned = prepared.review;
-                if (!cleaned) {
-                    (0, reviewDiagnostics_1.logReviewSkip)(core, {
-                        filePath: file.filename,
-                        reason: prepared.skipReason ?? "should_skip_review",
-                        model: inlineReviewModel,
-                        language: inlineLanguage,
-                        reviewStrictness,
-                        securityReviewEnabled,
-                        threshold: INLINE_CONFIDENCE_THRESHOLD,
-                        preview: prepared.normalizedPreview ?? prepared.preview,
-                    });
-                    continue;
-                }
-                const confidence = scoreReviewConfidence(cleaned);
-                if (confidence < INLINE_CONFIDENCE_THRESHOLD) {
-                    (0, reviewDiagnostics_1.logReviewSkip)(core, {
-                        filePath: file.filename,
-                        reason: "confidence_below_threshold",
-                        model: inlineReviewModel,
-                        language: inlineLanguage,
-                        reviewStrictness,
-                        securityReviewEnabled,
-                        confidence,
-                        threshold: INLINE_CONFIDENCE_THRESHOLD,
-                        preview: prepared.normalizedPreview,
-                    });
-                    continue;
-                }
-                const findingRisk = (0, riskLevel_1.determineRiskLevel)([confidence], [cleaned.toLowerCase()], { securitySensitive: securityReviewEnabled });
-                highestAcceptedFindingRisk = (0, riskLevel_1.getHighestRiskLevel)(highestAcceptedFindingRisk, findingRisk);
-                summaryFindings.push((0, summaryComment_1.createSummaryFinding)({
+            }
+            else {
+                (0, reviewDiagnostics_1.logReviewSkip)(core, {
                     filePath: file.filename,
-                    review: cleaned,
-                    risk: findingRisk,
-                }));
-                try {
-                    await octokit.rest.pulls.createReviewComment({
-                        owner,
-                        repo,
-                        pull_number: pr.number,
-                        commit_id: commitSha,
-                        path: file.filename,
-                        side: "RIGHT",
-                        line: targetLine,
-                        body: `🤖 **AI Suggestion** (Confidence: ${confidence}/100)\n\n${cleaned}`,
-                    });
-                    core.info(`Posted inline comment for ${file.filename}:${targetLine}`);
-                }
-                catch (error) {
-                    (0, reviewDiagnostics_1.logReviewSkip)(core, {
-                        filePath: file.filename,
-                        reason: "inline_comment_post_failed",
-                        model: inlineReviewModel,
-                        language: inlineLanguage,
-                        reviewStrictness,
-                        securityReviewEnabled,
-                        threshold: INLINE_CONFIDENCE_THRESHOLD,
-                    });
-                    core.warning(`Failed to post inline comment for ${file.filename}: ${error}`);
-                }
+                    reason: "no_changed_functions_found",
+                    model: inlineReviewModel,
+                    language: inlineLanguage,
+                    reviewStrictness,
+                    securityReviewEnabled,
+                    threshold: INLINE_CONFIDENCE_THRESHOLD,
+                });
             }
-            const prLabels = pr.labels?.map((l) => l.name) ?? [];
-            const hasOverride = prLabels.includes(OVERRIDE_LABEL);
-            const effectiveRisk = (0, riskLevel_1.getHighestRiskLevel)(risk, highestAcceptedFindingRisk);
-            if (effectiveRisk !== risk) {
-                const selected = labelMap[effectiveRisk];
-                await ensureLabel(octokit, owner, repo, selected.name, selected.color, selected.description);
-                await (0, riskLabels_1.applyRiskLabel)(octokit, owner, repo, pr.number, selected.name, riskLabels, core);
-                core.info(`Applied risk label: ${selected.name}`);
+            // Pick the first changed line to comment on
+            const targetLine = changedLines[0];
+            // Skip if already reviewed
+            const scopedReviewKey = `${file.filename}:${targetLine}`;
+            if (reviewedScopedLines.has(scopedReviewKey))
+                continue;
+            reviewedScopedLines.add(scopedReviewKey);
+            core.debug(`Posting inline comment for ${file.filename} at line ${targetLine}`);
+            const scopedPatch = (0, extractScopedPatch_1.extractScopedPatch)(patch, targetLine);
+            core.debug(`Scoped Patch:\n${scopedPatch}`);
+            reviewedFilePaths.add(file.filename);
+            const prompt = (0, reviewPrompt_1.buildScopedReviewPrompt)({
+                fileName: file.filename,
+                targetLine,
+                scopedPatch,
+                securityReviewEnabled,
+                reviewStrictness,
+            });
+            let raw;
+            try {
+                raw = await llm.reviewDiff(prompt, modelRoutingEnabled ? inlineReviewModel : undefined);
             }
-            if (effectiveRisk === "high" && !hasOverride) {
-                if (reviewedFilePaths.size > 0) {
-                    await upsertSummaryComment(octokit, owner, repo, pr.number, (0, summaryComment_1.buildSummaryBody)({
-                        reviewedFilePaths,
-                        findings: summaryFindings,
-                    }));
-                }
-                core.setFailed("🚨 AI review detected HIGH-RISK issues. Add 'ai-review: override' to bypass.");
-                return;
+            catch {
+                (0, reviewDiagnostics_1.logReviewSkip)(core, {
+                    filePath: file.filename,
+                    reason: "provider_model_call_failed",
+                    model: inlineReviewModel,
+                    language: inlineLanguage,
+                    reviewStrictness,
+                    securityReviewEnabled,
+                    threshold: INLINE_CONFIDENCE_THRESHOLD,
+                });
+                core.warning(`AI inline review failed for ${file.filename}`);
+                continue;
             }
-            if (effectiveRisk === "high" && hasOverride) {
-                core.warning("⚠️ High-risk PR overridden by maintainer label.");
+            const prepared = (0, reviewOutput_1.prepareReviewWithDiagnostics)(raw);
+            const cleaned = prepared.review;
+            if (!cleaned) {
+                (0, reviewDiagnostics_1.logReviewSkip)(core, {
+                    filePath: file.filename,
+                    reason: prepared.skipReason ?? "should_skip_review",
+                    model: inlineReviewModel,
+                    language: inlineLanguage,
+                    reviewStrictness,
+                    securityReviewEnabled,
+                    threshold: INLINE_CONFIDENCE_THRESHOLD,
+                    preview: prepared.normalizedPreview ?? prepared.preview,
+                });
+                continue;
+            }
+            const confidence = scoreReviewConfidence(cleaned);
+            if (confidence < INLINE_CONFIDENCE_THRESHOLD) {
+                (0, reviewDiagnostics_1.logReviewSkip)(core, {
+                    filePath: file.filename,
+                    reason: "confidence_below_threshold",
+                    model: inlineReviewModel,
+                    language: inlineLanguage,
+                    reviewStrictness,
+                    securityReviewEnabled,
+                    confidence,
+                    threshold: INLINE_CONFIDENCE_THRESHOLD,
+                    preview: prepared.normalizedPreview,
+                });
+                continue;
+            }
+            const findingRisk = (0, riskLevel_1.determineRiskLevel)([confidence], [cleaned.toLowerCase()], { securitySensitive: securityReviewEnabled });
+            highestAcceptedFindingRisk = (0, riskLevel_1.getHighestRiskLevel)(highestAcceptedFindingRisk, findingRisk);
+            summaryFindings.push((0, summaryComment_1.createSummaryFinding)({
+                filePath: file.filename,
+                review: cleaned,
+                risk: findingRisk,
+            }));
+            try {
+                await octokit.rest.pulls.createReviewComment({
+                    owner,
+                    repo,
+                    pull_number: pr.number,
+                    commit_id: commitSha,
+                    path: file.filename,
+                    side: "RIGHT",
+                    line: targetLine,
+                    body: `🤖 **AI Suggestion** (Confidence: ${confidence}/100)\n\n${cleaned}`,
+                });
+                core.info(`Posted inline comment for ${file.filename}:${targetLine}`);
+            }
+            catch (error) {
+                (0, reviewDiagnostics_1.logReviewSkip)(core, {
+                    filePath: file.filename,
+                    reason: "inline_comment_post_failed",
+                    model: inlineReviewModel,
+                    language: inlineLanguage,
+                    reviewStrictness,
+                    securityReviewEnabled,
+                    threshold: INLINE_CONFIDENCE_THRESHOLD,
+                });
+                core.warning(`Failed to post inline comment for ${file.filename}: ${error}`);
             }
         }
         if (reviewedFilePaths.size === 0) {
             core.info("No summary findings to post");
             return;
+        }
+        const finalRisk = highestAcceptedFindingRisk;
+        const selected = labelMap[finalRisk];
+        await ensureLabel(octokit, owner, repo, selected.name, selected.color, selected.description);
+        await (0, riskLabels_1.applyRiskLabel)(octokit, owner, repo, pr.number, selected.name, riskLabels, core);
+        core.info(`Applied risk label: ${selected.name}`);
+        const prLabels = pr.labels?.map((l) => l.name) ?? [];
+        const hasOverride = prLabels.includes(OVERRIDE_LABEL);
+        if (finalRisk === "high" && !hasOverride) {
+            await upsertSummaryComment(octokit, owner, repo, pr.number, (0, summaryComment_1.buildSummaryBody)({
+                reviewedFilePaths,
+                findings: summaryFindings,
+            }));
+            core.setFailed("🚨 AI review detected HIGH-RISK issues. Add 'ai-review: override' to bypass.");
+            return;
+        }
+        if (finalRisk === "high" && hasOverride) {
+            core.warning("⚠️ High-risk PR overridden by maintainer label.");
         }
         await upsertSummaryComment(octokit, owner, repo, pr.number, (0, summaryComment_1.buildSummaryBody)({
             reviewedFilePaths,

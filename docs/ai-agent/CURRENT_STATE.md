@@ -11,6 +11,7 @@ This file describes what the project currently does. Treat the codebase as the f
 * Full file source can be fetched from PR head SHA.
 * AST function extractor can extract TypeScript/JavaScript functions.
 * Changed lines can be mapped to changed functions.
+* Each reviewable file is processed once per run.
 * Each changed function is reviewed once within the current run.
 * Large changed functions use focused context around changed lines to reduce token waste.
 * Review strictness can be configured as lenient, balanced, or strict.
