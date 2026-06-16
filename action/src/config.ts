@@ -1,4 +1,12 @@
 export type ReviewStrictness = "lenient" | "balanced" | "strict";
+export type ModelRoutingLanguage =
+  | "typescript"
+  | "javascript"
+  | "python"
+  | "markdown"
+  | "json"
+  | "yaml"
+  | "other";
 
 export interface ReviewerConfig {
   enabled: boolean;
@@ -8,6 +16,11 @@ export interface ReviewerConfig {
   min_confidence?: number;
   review?: {
     strictness?: ReviewStrictness;
+  };
+  model_routing?: {
+    enabled?: boolean;
+    default_model?: string;
+    routes?: Partial<Record<ModelRoutingLanguage, string>>;
   };
   security_review?: {
     enabled?: boolean;
@@ -20,6 +33,10 @@ export const DEFAULT_CONFIG: ReviewerConfig = {
   min_confidence: 45,
   review: {
     strictness: "balanced",
+  },
+  model_routing: {
+    enabled: false,
+    routes: {},
   },
   security_review: {
     enabled: false,
@@ -49,6 +66,14 @@ export function mergeReviewerConfig(
       ...DEFAULT_CONFIG.review,
       ...(config.review ?? {}),
       strictness,
+    },
+    model_routing: {
+      ...DEFAULT_CONFIG.model_routing,
+      ...(config.model_routing ?? {}),
+      routes: {
+        ...(DEFAULT_CONFIG.model_routing?.routes ?? {}),
+        ...(config.model_routing?.routes ?? {}),
+      },
     },
     security_review: {
       ...DEFAULT_CONFIG.security_review,

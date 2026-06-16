@@ -23,6 +23,7 @@
 * large function focused-context handling
 * optional security review mode
 * configurable review strictness
+* basic model routing configuration
 
 ## Current Focus
 
@@ -63,7 +64,7 @@ Goals:
 * support PHP
 * support Java
 * support Go
-* add model routing by language
+* add model routing by language: completed for basic file-extension routing
 
 ### Phase 4: Security Review Mode
 

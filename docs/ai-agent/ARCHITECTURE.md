@@ -11,13 +11,14 @@
 7. Changed-function matching
 8. LLM review generation
 9. Configurable inline prompt modes
-10. Model output cleanup
-11. Confidence scoring
-12. Inline comment posting
-13. Summary comment creation/update
-14. Risk classification
-15. Risk label handling
-16. Merge blocking
+10. Optional model routing by file language
+11. Model output cleanup
+12. Confidence scoring
+13. Inline comment posting
+14. Summary comment creation/update
+15. Risk classification
+16. Risk label handling
+17. Merge blocking
 
 ## Architecture Diagram
 
@@ -57,6 +58,8 @@ Block Merge if High Risk
 * The compiled action entrypoint is `action/dist/index.js`.
 * Config loading lives in `action/src/load-config.ts`.
 * Inline review prompt formatting lives in `action/src/helpers/reviewPrompt.ts`.
+* Model routing lives in `action/src/helpers/modelRouting.ts`.
+* Inline review skip diagnostics live in `action/src/helpers/reviewDiagnostics.ts`.
 * Changed line extraction lives in `action/src/helpers/util.helpers.ts`.
 * Scoped patch fallback logic lives in `action/src/helpers/extractScopedPatch.ts`.
 * AST function extraction lives in `action/src/utils/ast-function-extractor.ts`.
@@ -72,6 +75,7 @@ Block Merge if High Risk
 * Large changed functions should be reviewed through a focused excerpt around changed lines.
 * Review strictness is configurable and defaults to balanced behavior.
 * Security review mode is opt-in through `.ai-reviewer.yml` and should not change default prompt behavior when disabled.
+* Model routing is opt-in through `.ai-reviewer.yml` and should preserve the existing default model when disabled.
 * Inline comments should be attached to changed lines whenever possible.
 * If a function start line is not commentable, use a changed line inside that function.
 * If AST extraction fails or returns no functions, the old scoped diff fallback can be used.

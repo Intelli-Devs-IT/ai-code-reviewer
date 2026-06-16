@@ -16,6 +16,11 @@ test("config defaults review strictness to balanced", () => {
   assert.equal(mergeReviewerConfig().review?.strictness, "balanced");
 });
 
+test("config defaults model routing to disabled", () => {
+  assert.equal(DEFAULT_CONFIG.model_routing?.enabled, false);
+  assert.equal(mergeReviewerConfig().model_routing?.enabled, false);
+});
+
 test("config reads enabled security review mode", () => {
   const config = mergeReviewerConfig({
     enabled: true,
@@ -97,4 +102,23 @@ test("inline confidence threshold changes by strictness", () => {
   assert.equal(getInlineConfidenceThreshold("lenient"), 10);
   assert.equal(getInlineConfidenceThreshold("balanced"), 20);
   assert.equal(getInlineConfidenceThreshold("strict"), 65);
+});
+
+test("model routing route config is merged", () => {
+  const config = mergeReviewerConfig({
+    model_routing: {
+      enabled: true,
+      default_model: "routed/default-model",
+      routes: {
+        typescript: "routed/typescript-model",
+      },
+    },
+  });
+
+  assert.equal(config.model_routing?.enabled, true);
+  assert.equal(config.model_routing?.default_model, "routed/default-model");
+  assert.equal(
+    config.model_routing?.routes?.typescript,
+    "routed/typescript-model"
+  );
 });

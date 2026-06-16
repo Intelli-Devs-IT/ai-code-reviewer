@@ -5,18 +5,27 @@ import { normalizeReview } from "../src/helpers/normalizeReview";
 import {
   cleanModelOutput,
   prepareReviewForScoring,
+  prepareReviewWithDiagnostics,
   shouldSkipReview,
 } from "../src/helpers/reviewOutput";
 
 test("skips NO_REVIEW output", () => {
   assert.equal(shouldSkipReview("NO_REVIEW"), true);
   assert.equal(prepareReviewForScoring("NO_REVIEW"), null);
+  assert.equal(
+    prepareReviewWithDiagnostics("NO_REVIEW").skipReason,
+    "llm_returned_no_review"
+  );
 });
 
 test("skips empty and whitespace output", () => {
   assert.equal(shouldSkipReview(""), true);
   assert.equal(shouldSkipReview("   "), true);
   assert.equal(prepareReviewForScoring("   "), null);
+  assert.equal(
+    prepareReviewWithDiagnostics("   ").skipReason,
+    "llm_empty_output"
+  );
 });
 
 test("handles cleaned think output before skip filtering", () => {
@@ -26,6 +35,10 @@ test("handles cleaned think output before skip filtering", () => {
   assert.equal(
     prepareReviewForScoring("<think>private reasoning</think>\nNO_REVIEW"),
     null
+  );
+  assert.equal(
+    prepareReviewWithDiagnostics("<think>private reasoning</think>").skipReason,
+    "cleaned_output_empty"
   );
 });
 

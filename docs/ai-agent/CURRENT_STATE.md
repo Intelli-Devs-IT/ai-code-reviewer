@@ -15,6 +15,7 @@ This file describes what the project currently does. Treat the codebase as the f
 * Large changed functions use focused context around changed lines to reduce token waste.
 * Review strictness can be configured as lenient, balanced, or strict.
 * Optional security review mode can strengthen inline prompts for security-sensitive code.
+* Optional model routing can select model names by detected file language.
 * Inline comments are posted near the correct function area.
 * Unchanged functions are ignored by the AST-based inline review path.
 * Summary comment is created or updated.
@@ -22,6 +23,7 @@ This file describes what the project currently does. Treat the codebase as the f
 * Summary content is concise and based on accepted inline findings across the PR run.
 * Summary findings are deduplicated and include file paths, inline finding count, overall risk, risk analysis, and next steps.
 * Confidence scoring is used to skip weak inline reviews.
+* Inline review skip diagnostics log safe reasons when comments are not posted.
 * Risk is classified as low, medium, or high.
 * Accepted inline findings with strong security indicators can raise risk to high when security review mode is enabled.
 * Risk labels are applied.

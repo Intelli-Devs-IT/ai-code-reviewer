@@ -11,6 +11,10 @@ exports.DEFAULT_CONFIG = {
     review: {
         strictness: "balanced",
     },
+    model_routing: {
+        enabled: false,
+        routes: {},
+    },
     security_review: {
         enabled: false,
     },
@@ -35,6 +39,14 @@ function mergeReviewerConfig(config = {}) {
             ...exports.DEFAULT_CONFIG.review,
             ...(config.review ?? {}),
             strictness,
+        },
+        model_routing: {
+            ...exports.DEFAULT_CONFIG.model_routing,
+            ...(config.model_routing ?? {}),
+            routes: {
+                ...(exports.DEFAULT_CONFIG.model_routing?.routes ?? {}),
+                ...(config.model_routing?.routes ?? {}),
+            },
         },
         security_review: {
             ...exports.DEFAULT_CONFIG.security_review,

@@ -45,6 +45,8 @@ Review strictness can be configured with `review.strictness`. It defaults to `ba
 
 Optional security-focused inline review can be enabled with `security_review.enabled: true`. It is disabled by default when the field is missing.
 
+Optional model routing can be enabled with `model_routing.enabled: true`. When disabled or missing, the existing default model is used.
+
 Example `.ai-reviewer.yml`:
 
 ```yaml
@@ -64,4 +66,12 @@ review:
 
 security_review:
   enabled: false
+
+model_routing:
+  enabled: true
+  default_model: qwen/qwen2.5-coder-32b-instruct
+  routes:
+    typescript: qwen/qwen2.5-coder-32b-instruct
+    javascript: qwen/qwen2.5-coder-32b-instruct
+    markdown: small-model-name
 ```

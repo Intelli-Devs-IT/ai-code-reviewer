@@ -47,6 +47,8 @@ const reviewOutput_1 = require("./helpers/reviewOutput");
 const summaryComment_1 = require("./helpers/summaryComment");
 const riskLevel_1 = require("./helpers/riskLevel");
 const reviewPrompt_1 = require("./helpers/reviewPrompt");
+const modelRouting_1 = require("./helpers/modelRouting");
+const reviewDiagnostics_1 = require("./helpers/reviewDiagnostics");
 /* =======================
    Helpers: file filtering
    ======================= */
@@ -278,6 +280,7 @@ async function run() {
         const securityReviewEnabled = config.security_review?.enabled === true;
         const reviewStrictness = config.review?.strictness ?? "balanced";
         const INLINE_CONFIDENCE_THRESHOLD = (0, config_1.getInlineConfidenceThreshold)(reviewStrictness);
+        const modelRoutingEnabled = config.model_routing?.enabled === true;
         if (!config.enabled) {
             core.info("AI reviewer disabled via config");
             return;
@@ -311,10 +314,41 @@ async function run() {
         //   if (shouldIgnoreFile(file.filename)) return false;
         //   return true;
         // });
-        const codeFiles = files
-            .filter((file) => file.patch)
-            .filter((file) => (0, load_config_1.fileMatchesConfig)(file.filename, config))
-            .slice(0, config.max_files);
+        const reviewableFiles = [];
+        for (const file of files) {
+            const language = (0, modelRouting_1.detectLanguageFromPath)(file.filename);
+            const selectedModel = (0, modelRouting_1.resolveModelForFile)({
+                filePath: file.filename,
+                config,
+                existingDefaultModel: llm_huggingface_1.DEFAULT_HUGGINGFACE_MODEL,
+            });
+            if (!file.patch) {
+                (0, reviewDiagnostics_1.logReviewSkip)(core, {
+                    filePath: file.filename,
+                    reason: "file_no_patch",
+                    model: selectedModel,
+                    language,
+                    reviewStrictness,
+                    securityReviewEnabled,
+                    threshold: INLINE_CONFIDENCE_THRESHOLD,
+                });
+                continue;
+            }
+            if (!(0, load_config_1.fileMatchesConfig)(file.filename, config)) {
+                (0, reviewDiagnostics_1.logReviewSkip)(core, {
+                    filePath: file.filename,
+                    reason: "file_skipped_by_config",
+                    model: selectedModel,
+                    language,
+                    reviewStrictness,
+                    securityReviewEnabled,
+                    threshold: INLINE_CONFIDENCE_THRESHOLD,
+                });
+                continue;
+            }
+            reviewableFiles.push(file);
+        }
+        const codeFiles = reviewableFiles.slice(0, config.max_files);
         core.info(`Reviewing ${codeFiles.length} code files`);
         const reviewedFunctionKeys = new Set();
         const reviewedScopedLines = new Set();
@@ -326,8 +360,27 @@ async function run() {
            ======================= */
         for (const file of codeFiles) {
             const lines = extractLineNumbersFromPatch(file.patch);
-            if (lines.length === 0)
+            const language = (0, modelRouting_1.detectLanguageFromPath)(file.filename);
+            const fileReviewModel = (0, modelRouting_1.resolveModelForFile)({
+                filePath: file.filename,
+                config,
+                existingDefaultModel: llm_huggingface_1.DEFAULT_HUGGINGFACE_MODEL,
+            });
+            if (lines.length === 0) {
+                (0, reviewDiagnostics_1.logReviewSkip)(core, {
+                    filePath: file.filename,
+                    reason: "no_changed_lines",
+                    model: fileReviewModel,
+                    language,
+                    reviewStrictness,
+                    securityReviewEnabled,
+                    threshold: INLINE_CONFIDENCE_THRESHOLD,
+                });
                 continue;
+            }
+            if (modelRoutingEnabled) {
+                core.info(`Using routed model for ${file.filename}: ${fileReviewModel}`);
+            }
             const prompt = `
 You are an expert code reviewer.
 
@@ -353,10 +406,19 @@ ${file.patch}
             const confidenceScores = [];
             const combinedReviewText = [];
             try {
-                const rawReview = await llm.reviewDiff(prompt);
+                const rawReview = await llm.reviewDiff(prompt, modelRoutingEnabled ? fileReviewModel : undefined);
                 review = (0, reviewOutput_1.cleanModelOutput)(rawReview);
             }
             catch {
+                (0, reviewDiagnostics_1.logReviewSkip)(core, {
+                    filePath: file.filename,
+                    reason: "provider_model_call_failed",
+                    model: fileReviewModel,
+                    language,
+                    reviewStrictness,
+                    securityReviewEnabled,
+                    threshold: INLINE_CONFIDENCE_THRESHOLD,
+                });
                 core.warning(`AI review failed for ${file.filename}`);
                 continue;
             }
@@ -394,16 +456,52 @@ ${file.patch}
             for (const file of codeFiles) {
                 if (!file.patch)
                     continue;
+                const inlineLanguage = (0, modelRouting_1.detectLanguageFromPath)(file.filename);
+                const inlineReviewModel = (0, modelRouting_1.resolveModelForFile)({
+                    filePath: file.filename,
+                    config,
+                    existingDefaultModel: llm_huggingface_1.DEFAULT_HUGGINGFACE_MODEL,
+                });
                 const changedLines = (0, util_helpers_1.getChangedLines)(file.patch);
-                if (changedLines.length === 0)
+                if (changedLines.length === 0) {
+                    (0, reviewDiagnostics_1.logReviewSkip)(core, {
+                        filePath: file.filename,
+                        reason: "no_changed_lines",
+                        model: inlineReviewModel,
+                        language: inlineLanguage,
+                        reviewStrictness,
+                        securityReviewEnabled,
+                        threshold: INLINE_CONFIDENCE_THRESHOLD,
+                    });
                     continue;
+                }
                 const sourceCode = await getFileSourceFromRef(octokit, owner, repo, file.filename, commitSha);
                 if (sourceCode === null) {
+                    (0, reviewDiagnostics_1.logReviewSkip)(core, {
+                        filePath: file.filename,
+                        reason: "source_unavailable",
+                        model: inlineReviewModel,
+                        language: inlineLanguage,
+                        reviewStrictness,
+                        securityReviewEnabled,
+                        threshold: INLINE_CONFIDENCE_THRESHOLD,
+                    });
                     continue;
                 }
                 const extractedFunctions = (0, ast_function_extractor_1.extractFunctionsFromSource)(sourceCode, file.filename);
                 const functionTargets = (0, functionReviewTargets_1.getFunctionReviewTargets)(file.filename, extractedFunctions, changedLines, reviewedFunctionKeys);
                 if (!(0, functionReviewTargets_1.shouldUseScopedReviewFallback)(extractedFunctions)) {
+                    if (functionTargets.length === 0) {
+                        (0, reviewDiagnostics_1.logReviewSkip)(core, {
+                            filePath: file.filename,
+                            reason: "no_changed_functions_found",
+                            model: inlineReviewModel,
+                            language: inlineLanguage,
+                            reviewStrictness,
+                            securityReviewEnabled,
+                            threshold: INLINE_CONFIDENCE_THRESHOLD,
+                        });
+                    }
                     for (const target of functionTargets) {
                         const reviewContext = (0, functionReviewTargets_1.getFunctionReviewContext)(target.fn, changedLines);
                         reviewedFilePaths.add(file.filename);
@@ -415,25 +513,65 @@ ${file.patch}
                             securityReviewEnabled,
                             reviewStrictness,
                         });
+                        let raw;
                         try {
-                            const raw = await llm.reviewDiff(prompt);
-                            const cleaned = (0, reviewOutput_1.prepareReviewForScoring)(raw);
-                            if (!cleaned) {
-                                continue;
-                            }
-                            const confidence = scoreReviewConfidence(cleaned);
-                            if (confidence < INLINE_CONFIDENCE_THRESHOLD) {
-                                core.info(`Skipping low-confidence review for ${file.filename}:${target.commentLine}`);
-                                continue;
-                            }
-                            const findingRisk = (0, riskLevel_1.determineRiskLevel)([confidence], [cleaned.toLowerCase()], { securitySensitive: securityReviewEnabled });
-                            highestAcceptedFindingRisk = (0, riskLevel_1.getHighestRiskLevel)(highestAcceptedFindingRisk, findingRisk);
-                            summaryFindings.push((0, summaryComment_1.createSummaryFinding)({
+                            raw = await llm.reviewDiff(prompt, modelRoutingEnabled ? inlineReviewModel : undefined);
+                        }
+                        catch {
+                            (0, reviewDiagnostics_1.logReviewSkip)(core, {
                                 filePath: file.filename,
                                 functionName: target.fn.name,
-                                review: cleaned,
-                                risk: findingRisk,
-                            }));
+                                reason: "provider_model_call_failed",
+                                model: inlineReviewModel,
+                                language: inlineLanguage,
+                                reviewStrictness,
+                                securityReviewEnabled,
+                                threshold: INLINE_CONFIDENCE_THRESHOLD,
+                            });
+                            core.warning(`AI inline review failed for ${file.filename}`);
+                            continue;
+                        }
+                        const prepared = (0, reviewOutput_1.prepareReviewWithDiagnostics)(raw);
+                        const cleaned = prepared.review;
+                        if (!cleaned) {
+                            (0, reviewDiagnostics_1.logReviewSkip)(core, {
+                                filePath: file.filename,
+                                functionName: target.fn.name,
+                                reason: prepared.skipReason ?? "should_skip_review",
+                                model: inlineReviewModel,
+                                language: inlineLanguage,
+                                reviewStrictness,
+                                securityReviewEnabled,
+                                threshold: INLINE_CONFIDENCE_THRESHOLD,
+                                preview: prepared.normalizedPreview ?? prepared.preview,
+                            });
+                            continue;
+                        }
+                        const confidence = scoreReviewConfidence(cleaned);
+                        if (confidence < INLINE_CONFIDENCE_THRESHOLD) {
+                            (0, reviewDiagnostics_1.logReviewSkip)(core, {
+                                filePath: file.filename,
+                                functionName: target.fn.name,
+                                reason: "confidence_below_threshold",
+                                model: inlineReviewModel,
+                                language: inlineLanguage,
+                                reviewStrictness,
+                                securityReviewEnabled,
+                                confidence,
+                                threshold: INLINE_CONFIDENCE_THRESHOLD,
+                                preview: prepared.normalizedPreview,
+                            });
+                            continue;
+                        }
+                        const findingRisk = (0, riskLevel_1.determineRiskLevel)([confidence], [cleaned.toLowerCase()], { securitySensitive: securityReviewEnabled });
+                        highestAcceptedFindingRisk = (0, riskLevel_1.getHighestRiskLevel)(highestAcceptedFindingRisk, findingRisk);
+                        summaryFindings.push((0, summaryComment_1.createSummaryFinding)({
+                            filePath: file.filename,
+                            functionName: target.fn.name,
+                            review: cleaned,
+                            risk: findingRisk,
+                        }));
+                        try {
                             await octokit.rest.pulls.createReviewComment({
                                 owner,
                                 repo,
@@ -447,11 +585,30 @@ ${file.patch}
                             core.info(`Posted inline comment for ${file.filename}:${target.commentLine}`);
                         }
                         catch (error) {
+                            (0, reviewDiagnostics_1.logReviewSkip)(core, {
+                                filePath: file.filename,
+                                functionName: target.fn.name,
+                                reason: "inline_comment_post_failed",
+                                model: inlineReviewModel,
+                                language: inlineLanguage,
+                                reviewStrictness,
+                                securityReviewEnabled,
+                                threshold: INLINE_CONFIDENCE_THRESHOLD,
+                            });
                             core.warning(`Failed to post inline comment for ${file.filename}: ${error}`);
                         }
                     }
                     continue;
                 }
+                (0, reviewDiagnostics_1.logReviewSkip)(core, {
+                    filePath: file.filename,
+                    reason: "ast_no_functions_fallback_used",
+                    model: inlineReviewModel,
+                    language: inlineLanguage,
+                    reviewStrictness,
+                    securityReviewEnabled,
+                    threshold: INLINE_CONFIDENCE_THRESHOLD,
+                });
                 // Pick the first changed line to comment on
                 const targetLine = changedLines[0];
                 // Skip if already reviewed
@@ -470,24 +627,61 @@ ${file.patch}
                     securityReviewEnabled,
                     reviewStrictness,
                 });
+                let raw;
                 try {
-                    const raw = await llm.reviewDiff(prompt);
-                    const cleaned = (0, reviewOutput_1.prepareReviewForScoring)(raw);
-                    if (!cleaned) {
-                        continue;
-                    }
-                    const confidence = scoreReviewConfidence(cleaned);
-                    if (confidence < INLINE_CONFIDENCE_THRESHOLD) {
-                        core.info(`Skipping low-confidence review for ${file.filename}:${targetLine}`);
-                        continue;
-                    }
-                    const findingRisk = (0, riskLevel_1.determineRiskLevel)([confidence], [cleaned.toLowerCase()], { securitySensitive: securityReviewEnabled });
-                    highestAcceptedFindingRisk = (0, riskLevel_1.getHighestRiskLevel)(highestAcceptedFindingRisk, findingRisk);
-                    summaryFindings.push((0, summaryComment_1.createSummaryFinding)({
+                    raw = await llm.reviewDiff(prompt, modelRoutingEnabled ? inlineReviewModel : undefined);
+                }
+                catch {
+                    (0, reviewDiagnostics_1.logReviewSkip)(core, {
                         filePath: file.filename,
-                        review: cleaned,
-                        risk: findingRisk,
-                    }));
+                        reason: "provider_model_call_failed",
+                        model: inlineReviewModel,
+                        language: inlineLanguage,
+                        reviewStrictness,
+                        securityReviewEnabled,
+                        threshold: INLINE_CONFIDENCE_THRESHOLD,
+                    });
+                    core.warning(`AI inline review failed for ${file.filename}`);
+                    continue;
+                }
+                const prepared = (0, reviewOutput_1.prepareReviewWithDiagnostics)(raw);
+                const cleaned = prepared.review;
+                if (!cleaned) {
+                    (0, reviewDiagnostics_1.logReviewSkip)(core, {
+                        filePath: file.filename,
+                        reason: prepared.skipReason ?? "should_skip_review",
+                        model: inlineReviewModel,
+                        language: inlineLanguage,
+                        reviewStrictness,
+                        securityReviewEnabled,
+                        threshold: INLINE_CONFIDENCE_THRESHOLD,
+                        preview: prepared.normalizedPreview ?? prepared.preview,
+                    });
+                    continue;
+                }
+                const confidence = scoreReviewConfidence(cleaned);
+                if (confidence < INLINE_CONFIDENCE_THRESHOLD) {
+                    (0, reviewDiagnostics_1.logReviewSkip)(core, {
+                        filePath: file.filename,
+                        reason: "confidence_below_threshold",
+                        model: inlineReviewModel,
+                        language: inlineLanguage,
+                        reviewStrictness,
+                        securityReviewEnabled,
+                        confidence,
+                        threshold: INLINE_CONFIDENCE_THRESHOLD,
+                        preview: prepared.normalizedPreview,
+                    });
+                    continue;
+                }
+                const findingRisk = (0, riskLevel_1.determineRiskLevel)([confidence], [cleaned.toLowerCase()], { securitySensitive: securityReviewEnabled });
+                highestAcceptedFindingRisk = (0, riskLevel_1.getHighestRiskLevel)(highestAcceptedFindingRisk, findingRisk);
+                summaryFindings.push((0, summaryComment_1.createSummaryFinding)({
+                    filePath: file.filename,
+                    review: cleaned,
+                    risk: findingRisk,
+                }));
+                try {
                     await octokit.rest.pulls.createReviewComment({
                         owner,
                         repo,
@@ -501,6 +695,15 @@ ${file.patch}
                     core.info(`Posted inline comment for ${file.filename}:${targetLine}`);
                 }
                 catch (error) {
+                    (0, reviewDiagnostics_1.logReviewSkip)(core, {
+                        filePath: file.filename,
+                        reason: "inline_comment_post_failed",
+                        model: inlineReviewModel,
+                        language: inlineLanguage,
+                        reviewStrictness,
+                        securityReviewEnabled,
+                        threshold: INLINE_CONFIDENCE_THRESHOLD,
+                    });
                     core.warning(`Failed to post inline comment for ${file.filename}: ${error}`);
                 }
             }
