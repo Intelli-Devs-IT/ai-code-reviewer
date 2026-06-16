@@ -38,11 +38,11 @@ const github = __importStar(require("@actions/github"));
 const llm_huggingface_1 = require("./llm.huggingface");
 const load_config_1 = require("./load-config");
 const extractScopedPatch_1 = require("./helpers/extractScopedPatch");
-const normalizeReview_1 = require("./helpers/normalizeReview");
 const util_helpers_1 = require("./helpers/util.helpers");
 const riskLabels_1 = require("./helpers/riskLabels");
 const ast_function_extractor_1 = require("./utils/ast-function-extractor");
 const functionReviewTargets_1 = require("./helpers/functionReviewTargets");
+const reviewOutput_1 = require("./helpers/reviewOutput");
 /* =======================
    Helpers: file filtering
    ======================= */
@@ -60,18 +60,6 @@ function shouldIgnoreFile(filename) {
     const ignoredFiles = ["package-lock.json", "yarn.lock", "pnpm-lock.yaml"];
     return (ignoredPaths.some((p) => filename.startsWith(p)) ||
         ignoredFiles.includes(filename));
-}
-/* =======================
-   Helpers: clean model output
-   ======================= */
-function cleanModelOutput(text) {
-    if (!text)
-        return text;
-    // Remove <think>...</think> blocks (DeepSeek / reasoning models)
-    return text
-        .replace(/<think>[\s\S]*?<\/think>/gi, "")
-        .replace(/^\s+|\s+$/g, "")
-        .trim();
 }
 /* =======================
    Helpers: score review confidence
@@ -359,7 +347,7 @@ ${file.patch}
             const combinedReviewText = [];
             try {
                 const rawReview = await llm.reviewDiff(prompt);
-                review = cleanModelOutput(rawReview);
+                review = (0, reviewOutput_1.cleanModelOutput)(rawReview);
             }
             catch {
                 core.warning(`AI review failed for ${file.filename}`);
@@ -453,17 +441,36 @@ ${summaryFindings.join("\n\n")}
                     for (const target of functionTargets) {
                         core.debug(`Posting inline comment for ${file.filename} at line ${target.commentLine}`);
                         const prompt = `
-You are an expert code reviewer.
+You are a senior code reviewer.
 
 Review ONLY the changed function below.
 
 Rules:
-- Focus on real bugs, security issues, logic problems, missing edge cases, or maintainability problems.
-- Include EXACTLY ONE GitHub suggestion block only if you are confident.
+- Focus only on meaningful issues: real bugs, security vulnerabilities, authentication or authorization mistakes, unsafe data handling, null or undefined edge cases, broken async behavior, incorrect error handling, race conditions, data loss risks, incorrect business logic, or serious maintainability issues that can cause bugs.
+- Avoid comments about formatting, naming preference, minor style choices, harmless refactoring, subjective readability, missing comments, or generic "add tests" advice unless a specific bug risk exists.
+- Do not review unchanged code, unrelated code, or code outside this function.
+- If there is no meaningful issue, return exactly: NO_REVIEW
+- Do not include more than one issue.
+- Pick only the most impactful issue.
 - Keep the explanation short.
-- Do not mention unrelated code.
-- Do not review outside this function.
-- If there is no meaningful issue, return an empty response.
+- Include a GitHub suggestion block only when the exact replacement code is obvious and safe.
+- Do not include a suggestion block for vague advice.
+- Do not include a suggestion block if the fix requires changing code outside the reviewed function.
+- Do not include multiple suggestion blocks.
+- Do not mention being an AI.
+- Do not include chain-of-thought.
+- Do not output <think> sections.
+
+Use this output format for valid reviews:
+
+ISSUE:
+Short explanation of the problem.
+
+IMPACT:
+Short explanation of why it matters.
+
+SUGGESTION:
+Optional GitHub suggestion block only if safe and exact.
 
 Changed function:
 
@@ -479,8 +486,8 @@ ${file.patch}
 `;
                         try {
                             const raw = await llm.reviewDiff(prompt);
-                            const cleaned = (0, normalizeReview_1.normalizeReview)(cleanModelOutput(raw));
-                            if (!cleaned.trim()) {
+                            const cleaned = (0, reviewOutput_1.prepareReviewForScoring)(raw);
+                            if (!cleaned) {
                                 continue;
                             }
                             const confidence = scoreReviewConfidence(cleaned);
@@ -517,18 +524,34 @@ ${file.patch}
                 const scopedPatch = (0, extractScopedPatch_1.extractScopedPatch)(file.patch, targetLine);
                 core.debug(`Scoped Patch:\n${scopedPatch}`);
                 const prompt = `
-You are an expert code reviewer.
+You are a senior code reviewer.
 
 Rules:
-- When suggesting a code change, ALWAYS include a GitHub suggestion block.
-- Suggestions must be directly copyable.
-- Do NOT explain inside the suggestion block.
-- Explanations go outside the block.
-- If no change is needed, say "No change required".
+- Focus only on meaningful issues: real bugs, security vulnerabilities, authentication or authorization mistakes, unsafe data handling, null or undefined edge cases, broken async behavior, incorrect error handling, race conditions, data loss risks, incorrect business logic, or serious maintainability issues that can cause bugs.
+- Avoid comments about formatting, naming preference, minor style choices, harmless refactoring, subjective readability, missing comments, or generic "add tests" advice unless a specific bug risk exists.
+- Do not review unchanged code, unrelated code, or code outside this scoped diff.
+- If there is no meaningful issue, return exactly: NO_REVIEW
+- Do not include more than one issue.
+- Pick only the most impactful issue.
+- Keep the explanation short.
+- Include a GitHub suggestion block only when the exact replacement code is obvious and safe.
+- Do not include a suggestion block for vague advice.
+- Do not include a suggestion block if the fix requires changing code outside the reviewed scope.
+- Do not include multiple suggestion blocks.
+- Do not mention being an AI.
+- Do not include chain-of-thought.
+- Do not output <think> sections.
 
-Format:
-- Short explanation (1–2 lines)
-- GitHub suggestion block
+Use this output format for valid reviews:
+
+ISSUE:
+Short explanation of the problem.
+
+IMPACT:
+Short explanation of why it matters.
+
+SUGGESTION:
+Optional GitHub suggestion block only if safe and exact.
 
 Review ONLY the code below carefully and suggest improvements.
 
@@ -540,7 +563,10 @@ ${scopedPatch}
 `;
                 try {
                     const raw = await llm.reviewDiff(prompt);
-                    const cleaned = (0, normalizeReview_1.normalizeReview)(raw);
+                    const cleaned = (0, reviewOutput_1.prepareReviewForScoring)(raw);
+                    if (!cleaned) {
+                        continue;
+                    }
                     const confidence = scoreReviewConfidence(cleaned);
                     if (confidence < 20) {
                         core.info(`Skipping low-confidence review for ${file.filename}:${targetLine}`);

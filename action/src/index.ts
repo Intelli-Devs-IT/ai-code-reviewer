@@ -4,7 +4,6 @@ import { HuggingFaceLLM } from "./llm.huggingface";
 import { loadConfig, fileMatchesConfig } from "./load-config";
 import { findFunctionStartLine } from "./helpers/findFunctionStartLine";
 import { extractScopedPatch } from "./helpers/extractScopedPatch";
-import { normalizeReview } from "./helpers/normalizeReview";
 import { getChangedLines } from "./helpers/util.helpers";
 import { applyRiskLabel } from "./helpers/riskLabels";
 import { extractFunctionsFromSource } from "./utils/ast-function-extractor";
@@ -12,6 +11,10 @@ import {
   getFunctionReviewTargets,
   shouldUseScopedReviewFallback,
 } from "./helpers/functionReviewTargets";
+import {
+  cleanModelOutput,
+  prepareReviewForScoring,
+} from "./helpers/reviewOutput";
 
 /* =======================
    Helpers: file filtering
@@ -38,20 +41,6 @@ function shouldIgnoreFile(filename: string): boolean {
     ignoredPaths.some((p) => filename.startsWith(p)) ||
     ignoredFiles.includes(filename)
   );
-}
-
-/* =======================
-   Helpers: clean model output
-   ======================= */
-
-function cleanModelOutput(text: string): string {
-  if (!text) return text;
-
-  // Remove <think>...</think> blocks (DeepSeek / reasoning models)
-  return text
-    .replace(/<think>[\s\S]*?<\/think>/gi, "")
-    .replace(/^\s+|\s+$/g, "")
-    .trim();
 }
 
 /* =======================
@@ -596,17 +585,36 @@ ${summaryFindings.join("\n\n")}
             );
 
             const prompt = `
-You are an expert code reviewer.
+You are a senior code reviewer.
 
 Review ONLY the changed function below.
 
 Rules:
-- Focus on real bugs, security issues, logic problems, missing edge cases, or maintainability problems.
-- Include EXACTLY ONE GitHub suggestion block only if you are confident.
+- Focus only on meaningful issues: real bugs, security vulnerabilities, authentication or authorization mistakes, unsafe data handling, null or undefined edge cases, broken async behavior, incorrect error handling, race conditions, data loss risks, incorrect business logic, or serious maintainability issues that can cause bugs.
+- Avoid comments about formatting, naming preference, minor style choices, harmless refactoring, subjective readability, missing comments, or generic "add tests" advice unless a specific bug risk exists.
+- Do not review unchanged code, unrelated code, or code outside this function.
+- If there is no meaningful issue, return exactly: NO_REVIEW
+- Do not include more than one issue.
+- Pick only the most impactful issue.
 - Keep the explanation short.
-- Do not mention unrelated code.
-- Do not review outside this function.
-- If there is no meaningful issue, return an empty response.
+- Include a GitHub suggestion block only when the exact replacement code is obvious and safe.
+- Do not include a suggestion block for vague advice.
+- Do not include a suggestion block if the fix requires changing code outside the reviewed function.
+- Do not include multiple suggestion blocks.
+- Do not mention being an AI.
+- Do not include chain-of-thought.
+- Do not output <think> sections.
+
+Use this output format for valid reviews:
+
+ISSUE:
+Short explanation of the problem.
+
+IMPACT:
+Short explanation of why it matters.
+
+SUGGESTION:
+Optional GitHub suggestion block only if safe and exact.
 
 Changed function:
 
@@ -623,9 +631,9 @@ ${file.patch}
 
             try {
               const raw = await llm.reviewDiff(prompt);
-              const cleaned = normalizeReview(cleanModelOutput(raw!));
+              const cleaned = prepareReviewForScoring(raw!);
 
-              if (!cleaned.trim()) {
+              if (!cleaned) {
                 continue;
               }
 
@@ -677,18 +685,34 @@ ${file.patch}
         core.debug(`Scoped Patch:\n${scopedPatch}`);
 
         const prompt = `
-You are an expert code reviewer.
+You are a senior code reviewer.
 
 Rules:
-- When suggesting a code change, ALWAYS include a GitHub suggestion block.
-- Suggestions must be directly copyable.
-- Do NOT explain inside the suggestion block.
-- Explanations go outside the block.
-- If no change is needed, say "No change required".
+- Focus only on meaningful issues: real bugs, security vulnerabilities, authentication or authorization mistakes, unsafe data handling, null or undefined edge cases, broken async behavior, incorrect error handling, race conditions, data loss risks, incorrect business logic, or serious maintainability issues that can cause bugs.
+- Avoid comments about formatting, naming preference, minor style choices, harmless refactoring, subjective readability, missing comments, or generic "add tests" advice unless a specific bug risk exists.
+- Do not review unchanged code, unrelated code, or code outside this scoped diff.
+- If there is no meaningful issue, return exactly: NO_REVIEW
+- Do not include more than one issue.
+- Pick only the most impactful issue.
+- Keep the explanation short.
+- Include a GitHub suggestion block only when the exact replacement code is obvious and safe.
+- Do not include a suggestion block for vague advice.
+- Do not include a suggestion block if the fix requires changing code outside the reviewed scope.
+- Do not include multiple suggestion blocks.
+- Do not mention being an AI.
+- Do not include chain-of-thought.
+- Do not output <think> sections.
 
-Format:
-- Short explanation (1–2 lines)
-- GitHub suggestion block
+Use this output format for valid reviews:
+
+ISSUE:
+Short explanation of the problem.
+
+IMPACT:
+Short explanation of why it matters.
+
+SUGGESTION:
+Optional GitHub suggestion block only if safe and exact.
 
 Review ONLY the code below carefully and suggest improvements.
 
@@ -701,7 +725,11 @@ ${scopedPatch}
 
         try {
           const raw = await llm.reviewDiff(prompt);
-          const cleaned = normalizeReview(raw!);
+          const cleaned = prepareReviewForScoring(raw!);
+
+          if (!cleaned) {
+            continue;
+          }
 
           const confidence = scoreReviewConfidence(cleaned);
           if (confidence < 20) {

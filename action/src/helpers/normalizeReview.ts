@@ -1,11 +1,19 @@
 export function normalizeReview(text: string): string {
-  // Keep only the first explanation + first suggestion block
-  const explanationIdx = text.indexOf("Explanation:");
-  const suggestionIdx = text.indexOf("```suggestion");
+  const trimmed = text.trim();
+  const firstSuggestionIdx = trimmed.indexOf("```suggestion");
 
-  if (explanationIdx !== -1 && suggestionIdx !== -1) {
-    return (text.slice(0, suggestionIdx) + text.slice(suggestionIdx)).trim();
+  if (firstSuggestionIdx === -1) {
+    return trimmed;
   }
 
-  return text.trim();
+  const firstSuggestionEndIdx = trimmed.indexOf(
+    "```",
+    firstSuggestionIdx + "```suggestion".length
+  );
+
+  if (firstSuggestionEndIdx === -1) {
+    return trimmed.slice(0, firstSuggestionIdx).trim();
+  }
+
+  return trimmed.slice(0, firstSuggestionEndIdx + "```".length).trim();
 }
