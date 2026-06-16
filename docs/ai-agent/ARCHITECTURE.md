@@ -59,6 +59,7 @@ Block Merge if High Risk
 * Scoped patch fallback logic lives in `action/src/helpers/extractScopedPatch.ts`.
 * AST function extraction lives in `action/src/utils/ast-function-extractor.ts`.
 * Changed-function targeting lives in `action/src/helpers/functionReviewTargets.ts`.
+* Summary comment formatting lives in `action/src/helpers/summaryComment.ts`.
 * Risk label cleanup lives in `action/src/helpers/riskLabels.ts`.
 
 ## Key Principles
@@ -76,4 +77,4 @@ Block Merge if High Risk
 ## Current Caveats
 
 * Durable duplicate prevention across reruns should be treated carefully. The code fetches existing inline comments and uses in-run dedupe sets, but agents must verify behavior before claiming broad rerun dedupe.
-* Summary/risk calculation currently happens inside the file review loop. Do not restructure this without a specific task and tests.
+* Summary findings are accumulated across the PR run and the summary is posted once after aggregation. Risk calculation still happens in the file review path, so modify it only with a specific task and tests.

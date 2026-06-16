@@ -15,6 +15,11 @@ import {
   cleanModelOutput,
   prepareReviewForScoring,
 } from "./helpers/reviewOutput";
+import {
+  buildSummaryBody,
+  formatSummaryFinding,
+  SUMMARY_MARKER,
+} from "./helpers/summaryComment";
 
 /* =======================
    Helpers: file filtering
@@ -256,8 +261,6 @@ async function getExistingInlineComments(
 /* =======================
    Helpers: fetch existing summary comment
    ======================= */
-const SUMMARY_MARKER = "<!-- ai-code-reviewer-FB:summary -->";
-
 async function getExistingSummaryComment(
   octokit: any,
   owner: string,
@@ -272,6 +275,41 @@ async function getExistingSummaryComment(
   });
 
   return comments.find((c: any) => c.body?.includes(SUMMARY_MARKER));
+}
+
+async function upsertSummaryComment(
+  octokit: any,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  body: string
+): Promise<void> {
+  const existingSummary = await getExistingSummaryComment(
+    octokit,
+    owner,
+    repo,
+    issueNumber
+  );
+
+  if (existingSummary) {
+    await octokit.rest.issues.updateComment({
+      owner,
+      repo,
+      comment_id: existingSummary.id,
+      body,
+    });
+
+    core.info("Updated AI review summary comment");
+  } else {
+    await octokit.rest.issues.createComment({
+      owner,
+      repo,
+      issue_number: issueNumber,
+      body,
+    });
+
+    core.info("Created AI review summary comment");
+  }
 }
 
 async function getFileSourceFromRef(
@@ -387,6 +425,10 @@ async function run() {
     core.info(`Reviewing ${codeFiles.length} code files`);
     const reviewedFunctionKeys = new Set<string>();
     const reviewedScopedLines = new Set<string>();
+    const reviewedFilePaths = new Set<string>();
+    const summaryFindings: string[] = [];
+    let latestSummaryConfidence = 0;
+    let latestSummaryRisk: RiskLevel = "low";
 
     /* =======================
        Review each file
@@ -419,7 +461,6 @@ ${file.patch}
 `;
 
       let review: string | null = null;
-      const summaryFindings: string[] = [];
       const confidenceScores: number[] = [];
       const combinedReviewText: string[] = [];
 
@@ -435,6 +476,8 @@ ${file.patch}
       confidenceScores.push(confidence);
       combinedReviewText.push(review.toLowerCase());
       const risk = determineRiskLevel(confidenceScores, combinedReviewText);
+      latestSummaryConfidence = confidence;
+      latestSummaryRisk = risk;
 
       core.info(`Confidence score for ${file.filename}: ${confidence}`);
 
@@ -443,54 +486,7 @@ ${file.patch}
       //   continue;
       // }
 
-      summaryFindings.push(`### ${file.filename}\n${review}`);
-
-      /* =======================
-         Post summary comment
-         ======================= */
-
-      if (summaryFindings.length === 0) {
-        core.info("No summary findings to post");
-        return;
-      }
-
-      const summaryBody = `
-${SUMMARY_MARKER}
-🤖 **AI Code Review Summary**
-_Confidence: ${confidence}/100_
-${risk === "high" ? "**🚨 HIGH RISK ISSUES DETECTED 🚨**" : ""}
-
-**Files reviewed:** ${summaryFindings.length}
-
-${summaryFindings.join("\n\n")}
-`;
-
-      const existingSummary = await getExistingSummaryComment(
-        octokit,
-        owner,
-        repo,
-        pr.number
-      );
-
-      if (existingSummary) {
-        await octokit.rest.issues.updateComment({
-          owner,
-          repo,
-          comment_id: existingSummary.id,
-          body: summaryBody,
-        });
-
-        core.info("Updated AI review summary comment");
-      } else {
-        await octokit.rest.issues.createComment({
-          owner,
-          repo,
-          issue_number: pr.number,
-          body: summaryBody,
-        });
-
-        core.info("Created AI review summary comment");
-      }
+      summaryFindings.push(formatSummaryFinding(file.filename, review));
 
       /* =======================
           Determine risk level
@@ -580,6 +576,8 @@ ${summaryFindings.join("\n\n")}
 
         if (!shouldUseScopedReviewFallback(extractedFunctions)) {
           for (const target of functionTargets) {
+            reviewedFilePaths.add(file.filename);
+
             core.debug(
               `Posting inline comment for ${file.filename} at line ${target.commentLine}`
             );
@@ -683,6 +681,7 @@ ${file.patch}
 
         const scopedPatch = extractScopedPatch(file.patch, targetLine);
         core.debug(`Scoped Patch:\n${scopedPatch}`);
+        reviewedFilePaths.add(file.filename);
 
         const prompt = `
 You are a senior code reviewer.
@@ -762,6 +761,21 @@ ${scopedPatch}
       const hasOverride = prLabels.includes(OVERRIDE_LABEL);
 
       if (risk === "high" && !hasOverride) {
+        if (summaryFindings.length > 0) {
+          await upsertSummaryComment(
+            octokit,
+            owner,
+            repo,
+            pr.number,
+            buildSummaryBody({
+              confidence: latestSummaryConfidence,
+              risk: latestSummaryRisk,
+              reviewedFilePaths,
+              summaryFindings,
+            })
+          );
+        }
+
         core.setFailed(
           "🚨 AI review detected HIGH-RISK issues. Add 'ai-review: override' to bypass."
         );
@@ -772,6 +786,24 @@ ${scopedPatch}
         core.warning("⚠️ High-risk PR overridden by maintainer label.");
       }
     }
+
+    if (summaryFindings.length === 0) {
+      core.info("No summary findings to post");
+      return;
+    }
+
+    await upsertSummaryComment(
+      octokit,
+      owner,
+      repo,
+      pr.number,
+      buildSummaryBody({
+        confidence: latestSummaryConfidence,
+        risk: latestSummaryRisk,
+        reviewedFilePaths,
+        summaryFindings,
+      })
+    );
   } catch (error: any) {
     core.setFailed(error.message);
   }

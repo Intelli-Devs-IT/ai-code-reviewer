@@ -15,6 +15,7 @@ This file describes what the project currently does. Treat the codebase as the f
 * Inline comments are posted near the correct function area.
 * Unchanged functions are ignored by the AST-based inline review path.
 * Summary comment is created or updated.
+* Summary file count is based on unique files that entered inline AST or fallback review.
 * Confidence scoring is used to skip weak inline reviews.
 * Risk is classified as low, medium, or high.
 * Risk labels are applied.
