@@ -49,6 +49,13 @@ test("does not skip a real issue", () => {
   assert.equal(prepareReviewForScoring(review), review);
 });
 
+test("does not skip a short real issue without a suggestion block", () => {
+  const review = "ISSUE:\nDivision by zero.\n\nIMPACT:\nThis can return Infinity.";
+
+  assert.equal(shouldSkipReview(review), false);
+  assert.equal(prepareReviewForScoring(review), review);
+});
+
 test("skips generic no-issue text", () => {
   assert.equal(shouldSkipReview("No meaningful issue found."), true);
   assert.equal(prepareReviewForScoring("No meaningful issue found."), null);

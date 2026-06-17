@@ -79,8 +79,12 @@ Optional GitHub suggestion block only if safe and exact.`;
 function buildStrictnessRules(reviewStrictness) {
     if (reviewStrictness === "lenient") {
         return `Review strictness: lenient.
-- Allow useful maintainability issues and clear refactoring suggestions when they are tied to a concrete bug risk, safety improvement, or repeated practical problem.
-- Medium-confidence reviews are acceptable when the issue is specific and useful.
+- Actively look for useful feedback on missing input validation, possible runtime errors, missing null or undefined guards, division by zero, weak error handling, confusing conditional logic, unsafe assumptions, maintainability problems that may lead to bugs, simple security or data-safety improvements, and incorrect or incomplete edge-case handling.
+- Allow useful maintainability issues and clear refactoring suggestions when they are tied to a concrete behavior risk, safety improvement, or repeated practical problem.
+- Testable improvements are acceptable when they are tied to a specific behavior risk.
+- Medium-confidence reviews are acceptable when the issue is specific, useful, and directly supported by the reviewed code.
+- Return NO_REVIEW only if the function is clearly correct and there is no useful bug, edge-case, safety, or maintainability feedback.
+- Do not return NO_REVIEW just because the issue is not severe.
 - Still avoid pure formatting, naming preference, generic cleanup, or subjective style comments.
 `;
     }

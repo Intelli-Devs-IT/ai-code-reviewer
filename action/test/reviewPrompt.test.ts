@@ -56,6 +56,28 @@ test("lenient strictness allows useful maintainability feedback", () => {
   assert.match(prompt, /Review strictness: lenient/);
   assert.match(prompt, /useful maintainability issues/);
   assert.match(prompt, /Medium-confidence reviews are acceptable/);
+  assert.match(prompt, /missing input validation/);
+  assert.match(prompt, /division by zero/);
+  assert.match(prompt, /missing null or undefined guards/);
+  assert.match(prompt, /specific behavior risk/);
+});
+
+test("lenient strictness does not encourage NO_REVIEW too easily", () => {
+  const prompt = buildChangedFunctionReviewPrompt({
+    functionText: "function divide(a, b) { return a / b; }",
+    patch: "@@ -1 +1 @@",
+    isFocusedContext: false,
+    reviewStrictness: "lenient",
+  });
+
+  assert.match(
+    prompt,
+    /Return NO_REVIEW only if the function is clearly correct/
+  );
+  assert.match(
+    prompt,
+    /Do not return NO_REVIEW just because the issue is not severe/
+  );
 });
 
 test("balanced strictness keeps default review bar", () => {
