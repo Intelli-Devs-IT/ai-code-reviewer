@@ -16,7 +16,7 @@ exports.DEFAULT_PROVIDER_FALLBACK_ON = [
     "invalid_response",
     "network_error",
 ];
-exports.DEFAULT_OPENROUTER_MODEL = "qwen/qwen-2.5-coder-32b-instruct";
+exports.DEFAULT_OPENROUTER_MODEL = "cohere/north-mini-code:free";
 exports.DEFAULT_CONFIG = {
     enabled: true,
     max_files: 10,
@@ -124,13 +124,13 @@ function normalizeProviderFailureBehavior(value) {
     return "warn";
 }
 function normalizeLlmProviderName(value, fallback) {
-    if (value === "huggingface") {
+    if (value === "huggingface" || value === "openrouter") {
         return value;
     }
     return fallback;
 }
 function normalizeOptionalLlmProviderName(value) {
-    if (value === "openrouter") {
+    if (value === "huggingface" || value === "openrouter") {
         return value;
     }
     return undefined;

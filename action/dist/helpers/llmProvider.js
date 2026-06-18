@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.LlmProviderCallError = void 0;
+exports.MissingApiKeyProvider = exports.LlmProviderCallError = void 0;
 exports.callLlmWithFallback = callLlmWithFallback;
 const providerFailures_1 = require("./providerFailures");
 class LlmProviderCallError extends Error {
@@ -11,6 +11,18 @@ class LlmProviderCallError extends Error {
     }
 }
 exports.LlmProviderCallError = LlmProviderCallError;
+class MissingApiKeyProvider {
+    constructor(name, envVarName) {
+        this.name = name;
+        this.envVarName = envVarName;
+    }
+    async review() {
+        const error = new Error(`${this.name} provider is configured but ${this.envVarName} is not set.`);
+        error.status = 401;
+        throw error;
+    }
+}
+exports.MissingApiKeyProvider = MissingApiKeyProvider;
 async function callLlmWithFallback(params) {
     try {
         const text = await params.primaryProvider.review({

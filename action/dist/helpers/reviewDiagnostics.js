@@ -19,6 +19,8 @@ function buildReviewSkipLog(params) {
     ];
     if (params.functionName)
         lines.push(`function=${params.functionName}`);
+    if (params.provider)
+        lines.push(`provider=${params.provider}`);
     if (params.model)
         lines.push(`model=${params.model}`);
     if (params.language)

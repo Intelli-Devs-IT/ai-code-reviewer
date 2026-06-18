@@ -62,3 +62,17 @@ test("provider failure fail behavior can fail after summary update", () => {
     /shouldFailForProviderFailures\(providerFailureBehavior, providerFailures\)[\s\S]*core\.setFailed/
   );
 });
+
+test("provider model logging includes provider and model", () => {
+  assert.match(INDEX_SOURCE, /"Using provider model:"/);
+  assert.match(INDEX_SOURCE, /`provider=\$\{primaryProviderName\}`/);
+  assert.match(INDEX_SOURCE, /`model=\$\{inlineReviewModel\}`/);
+});
+
+test("main review calls use provider-aware model resolution", () => {
+  assert.match(INDEX_SOURCE, /resolveModelForProviderFile/);
+  assert.doesNotMatch(
+    INDEX_SOURCE,
+    /modelRoutingEnabled\s*\?\s*inlineReviewModel\s*:\s*DEFAULT_HUGGINGFACE_MODEL/
+  );
+});

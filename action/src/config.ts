@@ -3,8 +3,9 @@ import type { ProviderFailureType } from "./helpers/providerFailures";
 export type ReviewStrictness = "lenient" | "balanced" | "strict";
 export type ModelValidationMode = "strict" | "warn" | "off";
 export type ProviderFailureBehavior = "warn" | "fail" | "skip";
-export type PrimaryLlmProviderName = "huggingface";
-export type FallbackLlmProviderName = "openrouter";
+export type LlmProviderName = "huggingface" | "openrouter";
+export type PrimaryLlmProviderName = LlmProviderName;
+export type FallbackLlmProviderName = LlmProviderName;
 export type ModelRoutingLanguage =
   | "typescript"
   | "javascript"
@@ -55,7 +56,7 @@ export const DEFAULT_PROVIDER_FALLBACK_ON: ProviderFailureType[] = [
   "network_error",
 ];
 
-export const DEFAULT_OPENROUTER_MODEL = "qwen/qwen-2.5-coder-32b-instruct";
+export const DEFAULT_OPENROUTER_MODEL = "cohere/north-mini-code:free";
 
 export const DEFAULT_CONFIG: ReviewerConfig = {
   enabled: true,
@@ -191,7 +192,7 @@ export function normalizeLlmProviderName(
   value: unknown,
   fallback: PrimaryLlmProviderName,
 ): PrimaryLlmProviderName {
-  if (value === "huggingface") {
+  if (value === "huggingface" || value === "openrouter") {
     return value;
   }
 
@@ -201,7 +202,7 @@ export function normalizeLlmProviderName(
 export function normalizeOptionalLlmProviderName(
   value: unknown,
 ): FallbackLlmProviderName | undefined {
-  if (value === "openrouter") {
+  if (value === "huggingface" || value === "openrouter") {
     return value;
   }
 

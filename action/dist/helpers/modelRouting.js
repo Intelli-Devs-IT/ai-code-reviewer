@@ -2,6 +2,9 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.detectLanguageFromPath = detectLanguageFromPath;
 exports.resolveModelForFile = resolveModelForFile;
+exports.resolveModelForProviderFile = resolveModelForProviderFile;
+const config_1 = require("../config");
+const huggingFaceModels_1 = require("./huggingFaceModels");
 function detectLanguageFromPath(filePath) {
     const normalizedPath = filePath.toLowerCase();
     if (normalizedPath.endsWith(".ts") || normalizedPath.endsWith(".tsx")) {
@@ -44,4 +47,14 @@ function resolveModelForFile(params) {
         return routing.default_model;
     }
     return params.existingDefaultModel;
+}
+function resolveModelForProviderFile(params) {
+    if (params.provider === "openrouter") {
+        return params.config.openrouter?.default_model || config_1.DEFAULT_OPENROUTER_MODEL;
+    }
+    return resolveModelForFile({
+        filePath: params.filePath,
+        config: params.config,
+        existingDefaultModel: huggingFaceModels_1.DEFAULT_HUGGINGFACE_MODEL,
+    });
 }

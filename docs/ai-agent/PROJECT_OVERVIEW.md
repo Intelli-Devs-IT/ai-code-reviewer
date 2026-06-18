@@ -45,13 +45,13 @@ Review strictness can be configured with `review.strictness`. It defaults to `ba
 
 Optional security-focused inline review can be enabled with `security_review.enabled: true`. It is disabled by default when the field is missing.
 
-Optional model routing can be enabled with `model_routing.enabled: true`. When disabled or missing, the existing default model is used.
+Optional model routing can be enabled with `model_routing.enabled: true`. When disabled or missing, the configured primary provider uses its own default model.
 
 Model validation can be configured with `model_validation.mode`. It defaults to `warn`, which allows custom/private/experimental models while warning when a configured model is outside the tested model list. Use `strict` to allow only tested models, or `off` to disable model-name validation.
 
 Provider failure handling can be configured with `provider_failures.behavior`. It defaults to `warn`, which continues the workflow and includes provider failures in the summary. Use `fail` to fail the workflow when provider calls fail, or `skip` to keep failure details concise while avoiding misleading review summaries.
 
-Hugging Face remains the default primary LLM provider. OpenRouter can be configured as an optional fallback provider with `providers.fallback: openrouter` and `OPENROUTER_API_KEY`.
+Hugging Face remains the default primary LLM provider. OpenRouter can be configured as either a primary or fallback provider with `providers.primary: openrouter` or `providers.fallback: openrouter` and `OPENROUTER_API_KEY`. Provider-specific defaults are kept separate so Hugging Face model names are not used for OpenRouter calls.
 
 Example `.ai-reviewer.yml`:
 
@@ -98,5 +98,5 @@ providers:
     - network_error
 
 openrouter:
-  default_model: qwen/qwen-2.5-coder-32b-instruct
+  default_model: cohere/north-mini-code:free
 ```

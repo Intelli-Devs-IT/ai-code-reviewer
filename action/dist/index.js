@@ -238,6 +238,20 @@ async function upsertSummaryComment(octokit, owner, repo, issueNumber, body) {
         core.info("Created AI review summary comment");
     }
 }
+function getProviderApiKeyEnvVar(provider) {
+    return provider === "openrouter" ? "OPENROUTER_API_KEY" : "HF_API_KEY";
+}
+function getProviderDisplayName(provider) {
+    return provider === "openrouter" ? "OpenRouter" : "Hugging Face";
+}
+function createConfiguredProvider(params) {
+    if (params.provider === "openrouter") {
+        return params.openRouterKey
+            ? new llm_openrouter_1.OpenRouterProvider(params.openRouterKey, fetch, params.referer)
+            : null;
+    }
+    return params.hfKey ? new llm_huggingface_1.HuggingFaceLLM(params.hfKey, core) : null;
+}
 /* =======================
    Main Action
    ======================= */
@@ -264,10 +278,10 @@ async function run() {
         const securityReviewEnabled = config.security_review?.enabled === true;
         const reviewStrictness = config.review?.strictness ?? "balanced";
         const INLINE_CONFIDENCE_THRESHOLD = (0, config_1.getInlineConfidenceThreshold)(reviewStrictness);
-        const modelRoutingEnabled = config.model_routing?.enabled === true;
         const providerFailureBehavior = config.provider_failures?.behavior ?? "warn";
         const fallbackOn = config.providers?.fallback_on ?? [];
-        const openRouterModel = config.openrouter?.default_model ?? config_1.DEFAULT_OPENROUTER_MODEL;
+        const primaryProviderName = config.providers?.primary ?? "huggingface";
+        const fallbackProviderName = config.providers?.fallback;
         if (!config.enabled) {
             core.info("AI reviewer disabled via config");
             return;
@@ -277,17 +291,33 @@ async function run() {
            Init LLM (optional)
            ======================= */
         const hfKey = process.env.HF_API_KEY;
-        const llm = hfKey ? new llm_huggingface_1.HuggingFaceLLM(hfKey, core) : null;
         const openRouterKey = process.env.OPENROUTER_API_KEY;
-        const fallbackProvider = config.providers?.fallback === "openrouter" && openRouterKey
-            ? new llm_openrouter_1.OpenRouterProvider(openRouterKey, fetch, `${process.env.GITHUB_SERVER_URL ?? "https://github.com"}/${owner}/${repo}`)
+        const providerReferer = `${process.env.GITHUB_SERVER_URL ?? "https://github.com"}/${owner}/${repo}`;
+        let primaryProvider = createConfiguredProvider({
+            provider: primaryProviderName,
+            hfKey,
+            openRouterKey,
+            referer: providerReferer,
+        });
+        const fallbackProvider = fallbackProviderName
+            ? createConfiguredProvider({
+                provider: fallbackProviderName,
+                hfKey,
+                openRouterKey,
+                referer: providerReferer,
+            }) ?? undefined
             : undefined;
-        if (config.providers?.fallback === "openrouter" && !openRouterKey) {
-            core.warning("OpenRouter fallback is configured but OPENROUTER_API_KEY is not set.");
+        if (!primaryProvider) {
+            const envVarName = getProviderApiKeyEnvVar(primaryProviderName);
+            core.warning(`${getProviderDisplayName(primaryProviderName)} primary provider is configured but ${envVarName} is not set.`);
+            if (primaryProviderName === "huggingface" && !fallbackProviderName) {
+                core.warning("HF_API_KEY not set. AI reviews disabled.");
+                return;
+            }
+            primaryProvider = new llmProvider_1.MissingApiKeyProvider(primaryProviderName, envVarName);
         }
-        if (!llm) {
-            core.warning("HF_API_KEY not set. AI reviews disabled.");
-            return;
+        if (fallbackProviderName && !fallbackProvider) {
+            core.warning(`${getProviderDisplayName(fallbackProviderName)} fallback provider is configured but ${getProviderApiKeyEnvVar(fallbackProviderName)} is not set.`);
         }
         /* =======================
            Fetch existing inline comments
@@ -312,15 +342,16 @@ async function run() {
         const reviewableFiles = [];
         for (const file of files) {
             const language = (0, modelRouting_1.detectLanguageFromPath)(file.filename);
-            const selectedModel = (0, modelRouting_1.resolveModelForFile)({
+            const selectedModel = (0, modelRouting_1.resolveModelForProviderFile)({
+                provider: primaryProviderName,
                 filePath: file.filename,
                 config,
-                existingDefaultModel: llm_huggingface_1.DEFAULT_HUGGINGFACE_MODEL,
             });
             if (!file.patch) {
                 (0, reviewDiagnostics_1.logReviewSkip)(core, {
                     filePath: file.filename,
                     reason: "file_no_patch",
+                    provider: primaryProviderName,
                     model: selectedModel,
                     language,
                     reviewStrictness,
@@ -333,6 +364,7 @@ async function run() {
                 (0, reviewDiagnostics_1.logReviewSkip)(core, {
                     filePath: file.filename,
                     reason: "file_skipped_by_config",
+                    provider: primaryProviderName,
                     model: selectedModel,
                     language,
                     reviewStrictness,
@@ -377,19 +409,31 @@ async function run() {
             if (!patch)
                 continue;
             const inlineLanguage = (0, modelRouting_1.detectLanguageFromPath)(file.filename);
-            const inlineReviewModel = (0, modelRouting_1.resolveModelForFile)({
+            const inlineReviewModel = (0, modelRouting_1.resolveModelForProviderFile)({
+                provider: primaryProviderName,
                 filePath: file.filename,
                 config,
-                existingDefaultModel: llm_huggingface_1.DEFAULT_HUGGINGFACE_MODEL,
             });
-            if (modelRoutingEnabled) {
-                core.info(`Using routed model for ${file.filename}: ${inlineReviewModel}`);
-            }
+            const inlineFallbackModel = fallbackProviderName
+                ? (0, modelRouting_1.resolveModelForProviderFile)({
+                    provider: fallbackProviderName,
+                    filePath: file.filename,
+                    config,
+                })
+                : undefined;
+            core.info([
+                "Using provider model:",
+                `file=${file.filename}`,
+                `provider=${primaryProviderName}`,
+                `model=${inlineReviewModel}`,
+                `language=${inlineLanguage}`,
+            ].join("\n"));
             const changedLines = (0, util_helpers_1.getChangedLines)(patch);
             if (changedLines.length === 0) {
                 (0, reviewDiagnostics_1.logReviewSkip)(core, {
                     filePath: file.filename,
                     reason: "no_changed_lines",
+                    provider: primaryProviderName,
                     model: inlineReviewModel,
                     language: inlineLanguage,
                     reviewStrictness,
@@ -409,6 +453,7 @@ async function run() {
                 (0, reviewDiagnostics_1.logReviewSkip)(core, {
                     filePath: file.filename,
                     reason: "source_unavailable",
+                    provider: primaryProviderName,
                     model: inlineReviewModel,
                     language: inlineLanguage,
                     reviewStrictness,
@@ -433,22 +478,23 @@ async function run() {
                         reviewStrictness,
                     });
                     let raw;
-                    const primaryModel = modelRoutingEnabled
-                        ? inlineReviewModel
-                        : llm_huggingface_1.DEFAULT_HUGGINGFACE_MODEL;
+                    let reviewProviderName = primaryProviderName;
+                    let reviewModel = inlineReviewModel;
                     try {
                         const llmResult = await (0, llmProvider_1.callLlmWithFallback)({
                             prompt,
-                            primaryProvider: llm,
+                            primaryProvider,
                             fallbackProvider,
-                            primaryModel,
-                            fallbackModel: openRouterModel,
+                            primaryModel: inlineReviewModel,
+                            fallbackModel: inlineFallbackModel,
                             fallbackOn,
                             filePath: file.filename,
                             functionName: target.fn.name,
                             logger: core,
                         });
                         raw = llmResult.text;
+                        reviewProviderName = llmResult.provider;
+                        reviewModel = llmResult.model;
                     }
                     catch (error) {
                         const providerFailure = error instanceof llmProvider_1.LlmProviderCallError
@@ -457,15 +503,16 @@ async function run() {
                                 error,
                                 filePath: file.filename,
                                 functionName: target.fn.name,
-                                provider: "huggingface",
-                                model: primaryModel,
+                                provider: primaryProviderName,
+                                model: inlineReviewModel,
                             });
                         providerFailures.push(providerFailure);
                         (0, reviewDiagnostics_1.logReviewSkip)(core, {
                             filePath: file.filename,
                             functionName: target.fn.name,
                             reason: "provider_model_call_failed",
-                            model: inlineReviewModel,
+                            provider: providerFailure.provider ?? primaryProviderName,
+                            model: providerFailure.model ?? inlineReviewModel,
                             language: inlineLanguage,
                             reviewStrictness,
                             securityReviewEnabled,
@@ -482,7 +529,8 @@ async function run() {
                             filePath: file.filename,
                             functionName: target.fn.name,
                             reason: prepared.skipReason ?? "should_skip_review",
-                            model: inlineReviewModel,
+                            provider: reviewProviderName,
+                            model: reviewModel,
                             language: inlineLanguage,
                             reviewStrictness,
                             securityReviewEnabled,
@@ -497,7 +545,8 @@ async function run() {
                             filePath: file.filename,
                             functionName: target.fn.name,
                             reason: "confidence_below_threshold",
-                            model: inlineReviewModel,
+                            provider: reviewProviderName,
+                            model: reviewModel,
                             language: inlineLanguage,
                             reviewStrictness,
                             securityReviewEnabled,
@@ -533,7 +582,8 @@ async function run() {
                             filePath: file.filename,
                             functionName: target.fn.name,
                             reason: "inline_comment_post_failed",
-                            model: inlineReviewModel,
+                            provider: reviewProviderName,
+                            model: reviewModel,
                             language: inlineLanguage,
                             reviewStrictness,
                             securityReviewEnabled,
@@ -548,6 +598,7 @@ async function run() {
                 (0, reviewDiagnostics_1.logReviewSkip)(core, {
                     filePath: file.filename,
                     reason: "ast_no_functions_fallback_used",
+                    provider: primaryProviderName,
                     model: inlineReviewModel,
                     language: inlineLanguage,
                     reviewStrictness,
@@ -559,6 +610,7 @@ async function run() {
                 (0, reviewDiagnostics_1.logReviewSkip)(core, {
                     filePath: file.filename,
                     reason: "no_changed_functions_found",
+                    provider: primaryProviderName,
                     model: inlineReviewModel,
                     language: inlineLanguage,
                     reviewStrictness,
@@ -584,21 +636,22 @@ async function run() {
                 reviewStrictness,
             });
             let raw;
-            const primaryModel = modelRoutingEnabled
-                ? inlineReviewModel
-                : llm_huggingface_1.DEFAULT_HUGGINGFACE_MODEL;
+            let reviewProviderName = primaryProviderName;
+            let reviewModel = inlineReviewModel;
             try {
                 const llmResult = await (0, llmProvider_1.callLlmWithFallback)({
                     prompt,
-                    primaryProvider: llm,
+                    primaryProvider,
                     fallbackProvider,
-                    primaryModel,
-                    fallbackModel: openRouterModel,
+                    primaryModel: inlineReviewModel,
+                    fallbackModel: inlineFallbackModel,
                     fallbackOn,
                     filePath: file.filename,
                     logger: core,
                 });
                 raw = llmResult.text;
+                reviewProviderName = llmResult.provider;
+                reviewModel = llmResult.model;
             }
             catch (error) {
                 const providerFailure = error instanceof llmProvider_1.LlmProviderCallError
@@ -606,14 +659,15 @@ async function run() {
                     : (0, providerFailures_1.createProviderFailure)({
                         error,
                         filePath: file.filename,
-                        provider: "huggingface",
-                        model: primaryModel,
+                        provider: primaryProviderName,
+                        model: inlineReviewModel,
                     });
                 providerFailures.push(providerFailure);
                 (0, reviewDiagnostics_1.logReviewSkip)(core, {
                     filePath: file.filename,
                     reason: "provider_model_call_failed",
-                    model: inlineReviewModel,
+                    provider: providerFailure.provider ?? primaryProviderName,
+                    model: providerFailure.model ?? inlineReviewModel,
                     language: inlineLanguage,
                     reviewStrictness,
                     securityReviewEnabled,
@@ -629,7 +683,8 @@ async function run() {
                 (0, reviewDiagnostics_1.logReviewSkip)(core, {
                     filePath: file.filename,
                     reason: prepared.skipReason ?? "should_skip_review",
-                    model: inlineReviewModel,
+                    provider: reviewProviderName,
+                    model: reviewModel,
                     language: inlineLanguage,
                     reviewStrictness,
                     securityReviewEnabled,
@@ -643,7 +698,8 @@ async function run() {
                 (0, reviewDiagnostics_1.logReviewSkip)(core, {
                     filePath: file.filename,
                     reason: "confidence_below_threshold",
-                    model: inlineReviewModel,
+                    provider: reviewProviderName,
+                    model: reviewModel,
                     language: inlineLanguage,
                     reviewStrictness,
                     securityReviewEnabled,
@@ -677,7 +733,8 @@ async function run() {
                 (0, reviewDiagnostics_1.logReviewSkip)(core, {
                     filePath: file.filename,
                     reason: "inline_comment_post_failed",
-                    model: inlineReviewModel,
+                    provider: reviewProviderName,
+                    model: reviewModel,
                     language: inlineLanguage,
                     reviewStrictness,
                     securityReviewEnabled,

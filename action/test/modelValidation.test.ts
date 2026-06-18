@@ -200,6 +200,22 @@ test("OpenRouter model is not validated against Hugging Face tested models", () 
   assert.doesNotThrow(() => validateConfiguredModels(config));
 });
 
+test("OpenRouter primary model is not validated against Hugging Face tested models", () => {
+  const config = mergeReviewerConfig({
+    model_validation: {
+      mode: "strict",
+    },
+    providers: {
+      primary: "openrouter",
+    },
+    openrouter: {
+      default_model: "cohere/north-mini-code:free",
+    },
+  });
+
+  assert.doesNotThrow(() => validateConfiguredModels(config));
+});
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

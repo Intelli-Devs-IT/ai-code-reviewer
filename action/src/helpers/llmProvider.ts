@@ -1,7 +1,7 @@
-import { ProviderFailureType } from "./providerFailures";
+import type { LlmProviderName } from "../config";
+import type { ProviderFailure, ProviderFailureType } from "./providerFailures";
 import {
   createProviderFailure,
-  ProviderFailure,
   classifyProviderError,
 } from "./providerFailures";
 
@@ -29,6 +29,21 @@ export class LlmProviderCallError extends Error {
   constructor(public readonly failure: ProviderFailure) {
     super(failure.message);
     this.name = "LlmProviderCallError";
+  }
+}
+
+export class MissingApiKeyProvider implements LlmProvider {
+  constructor(
+    readonly name: LlmProviderName,
+    private readonly envVarName: string,
+  ) {}
+
+  async review(): Promise<string> {
+    const error = new Error(
+      `${this.name} provider is configured but ${this.envVarName} is not set.`
+    );
+    (error as any).status = 401;
+    throw error;
   }
 }
 

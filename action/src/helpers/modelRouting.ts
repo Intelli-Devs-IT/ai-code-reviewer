@@ -1,4 +1,10 @@
-import { ModelRoutingLanguage, ReviewerConfig } from "../config";
+import {
+  DEFAULT_OPENROUTER_MODEL,
+  LlmProviderName,
+  ModelRoutingLanguage,
+  ReviewerConfig,
+} from "../config";
+import { DEFAULT_HUGGINGFACE_MODEL } from "./huggingFaceModels";
 
 export function detectLanguageFromPath(
   filePath: string
@@ -64,4 +70,20 @@ export function resolveModelForFile(params: {
   }
 
   return params.existingDefaultModel;
+}
+
+export function resolveModelForProviderFile(params: {
+  provider: LlmProviderName;
+  filePath: string;
+  config: ReviewerConfig;
+}): string {
+  if (params.provider === "openrouter") {
+    return params.config.openrouter?.default_model || DEFAULT_OPENROUTER_MODEL;
+  }
+
+  return resolveModelForFile({
+    filePath: params.filePath,
+    config: params.config,
+    existingDefaultModel: DEFAULT_HUGGINGFACE_MODEL,
+  });
 }

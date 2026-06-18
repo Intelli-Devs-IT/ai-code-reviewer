@@ -10,6 +10,7 @@ test("skip log includes file function model and review metadata", () => {
   const log = buildReviewSkipLog({
     filePath: "src/auth/auth.service.ts",
     functionName: "createUser",
+    provider: "openrouter",
     model: "Qwen/Qwen2.5-Coder-32B-Instruct:nscale",
     language: "typescript",
     reviewStrictness: "balanced",
@@ -22,6 +23,7 @@ test("skip log includes file function model and review metadata", () => {
   assert.match(log, /AI review skipped:/);
   assert.match(log, /file=src\/auth\/auth.service\.ts/);
   assert.match(log, /function=createUser/);
+  assert.match(log, /provider=openrouter/);
   assert.match(log, /model=Qwen\/Qwen2\.5-Coder-32B-Instruct:nscale/);
   assert.match(log, /language=typescript/);
   assert.match(log, /strictness=balanced/);

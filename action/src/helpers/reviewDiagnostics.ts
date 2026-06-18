@@ -5,6 +5,7 @@ export interface ReviewSkipLogParams {
   filePath: string;
   reason: ReviewSkipReason | string;
   functionName?: string;
+  provider?: string;
   model?: string;
   language?: ModelRoutingLanguage;
   reviewStrictness?: string;
@@ -31,6 +32,7 @@ export function buildReviewSkipLog(params: ReviewSkipLogParams): string {
   ];
 
   if (params.functionName) lines.push(`function=${params.functionName}`);
+  if (params.provider) lines.push(`provider=${params.provider}`);
   if (params.model) lines.push(`model=${params.model}`);
   if (params.language) lines.push(`language=${params.language}`);
   if (params.reviewStrictness) {

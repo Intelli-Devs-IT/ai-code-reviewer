@@ -104,6 +104,27 @@ test("config reads provider fallback settings", () => {
   assert.equal(config.openrouter?.default_model, "openrouter/custom-model");
 });
 
+test("config reads OpenRouter primary and Hugging Face fallback", () => {
+  const config = mergeReviewerConfig({
+    providers: {
+      primary: "openrouter",
+      fallback: "huggingface",
+      fallback_on: ["auth_failed"],
+    },
+    openrouter: {
+      default_model: "cohere/north-mini-code:free",
+    },
+  });
+
+  assert.equal(config.providers?.primary, "openrouter");
+  assert.equal(config.providers?.fallback, "huggingface");
+  assert.deepEqual(config.providers?.fallback_on, ["auth_failed"]);
+  assert.equal(
+    config.openrouter?.default_model,
+    "cohere/north-mini-code:free",
+  );
+});
+
 test("invalid provider failure behavior falls back to warn", () => {
   const config = mergeReviewerConfig({
     provider_failures: {

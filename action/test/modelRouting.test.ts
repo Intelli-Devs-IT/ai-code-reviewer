@@ -3,8 +3,13 @@ import test from "node:test";
 
 import { mergeReviewerConfig } from "../src/config";
 import {
+  DEFAULT_OPENROUTER_MODEL,
+} from "../src/config";
+import { DEFAULT_HUGGINGFACE_MODEL } from "../src/helpers/huggingFaceModels";
+import {
   detectLanguageFromPath,
   resolveModelForFile,
+  resolveModelForProviderFile,
 } from "../src/helpers/modelRouting";
 import { buildChangedFunctionReviewPrompt } from "../src/helpers/reviewPrompt";
 
@@ -40,6 +45,96 @@ test("missing model routing returns existing default model", () => {
       existingDefaultModel: EXISTING_DEFAULT_MODEL,
     }),
     EXISTING_DEFAULT_MODEL
+  );
+});
+
+test("OpenRouter provider uses openrouter.default_model when routing is disabled", () => {
+  const config = mergeReviewerConfig({
+    providers: {
+      primary: "openrouter",
+    },
+    model_routing: {
+      enabled: false,
+      default_model: "hf/routed-default",
+    },
+    openrouter: {
+      default_model: "cohere/north-mini-code:free",
+    },
+  });
+
+  assert.equal(
+    resolveModelForProviderFile({
+      provider: "openrouter",
+      filePath: "src/app.ts",
+      config,
+    }),
+    "cohere/north-mini-code:free"
+  );
+});
+
+test("OpenRouter provider falls back to DEFAULT_OPENROUTER_MODEL", () => {
+  const config = mergeReviewerConfig({
+    providers: {
+      primary: "openrouter",
+    },
+    openrouter: {
+      default_model: undefined,
+    },
+  });
+
+  assert.equal(
+    resolveModelForProviderFile({
+      provider: "openrouter",
+      filePath: "src/app.ts",
+      config,
+    }),
+    DEFAULT_OPENROUTER_MODEL
+  );
+});
+
+test("Hugging Face provider still uses DEFAULT_HUGGINGFACE_MODEL when routing is disabled", () => {
+  const config = mergeReviewerConfig({
+    providers: {
+      primary: "huggingface",
+    },
+    model_routing: {
+      enabled: false,
+    },
+    openrouter: {
+      default_model: "cohere/north-mini-code:free",
+    },
+  });
+
+  assert.equal(
+    resolveModelForProviderFile({
+      provider: "huggingface",
+      filePath: "src/app.ts",
+      config,
+    }),
+    DEFAULT_HUGGINGFACE_MODEL
+  );
+});
+
+test("Hugging Face provider keeps existing model routing behavior", () => {
+  const config = mergeReviewerConfig({
+    providers: {
+      primary: "huggingface",
+    },
+    model_routing: {
+      enabled: true,
+      routes: {
+        typescript: "hf/typescript-model",
+      },
+    },
+  });
+
+  assert.equal(
+    resolveModelForProviderFile({
+      provider: "huggingface",
+      filePath: "src/app.ts",
+      config,
+    }),
+    "hf/typescript-model"
   );
 });
 

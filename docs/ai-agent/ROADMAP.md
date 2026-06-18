@@ -26,7 +26,7 @@
 * basic model routing configuration
 * configurable model validation for tested, custom, private, and experimental models
 * provider quota/payment failure handling in logs and summary output
-* optional OpenRouter fallback provider
+* optional OpenRouter provider with provider-aware primary/fallback model resolution
 
 ## Current Focus
 

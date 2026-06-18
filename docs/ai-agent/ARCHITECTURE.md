@@ -12,7 +12,7 @@
 8. LLM review generation
 9. Provider response validation
 10. Provider failure classification
-11. Optional provider fallback
+11. Provider-aware model resolution and optional provider fallback
 12. Configurable inline prompt modes
 13. Optional model routing by file language
 14. Configurable model validation
@@ -46,9 +46,11 @@ Review Each Changed Function Once
 ↓
 Validate Provider Response
 ↓
+Resolve Provider-Specific Model
+↓
 Classify Provider Failures
 ↓
-Fallback To OpenRouter If Configured
+Fallback To Configured Provider If Allowed
 ↓
 Clean + Normalize LLM Output
 ↓
@@ -95,8 +97,9 @@ Merge Blocking
 * Inline review prompt formatting lives in `action/src/helpers/reviewPrompt.ts`.
 * Provider response validation lives in `action/src/helpers/modelResponseValidation.ts`.
 * Provider failure classification lives in `action/src/helpers/providerFailures.ts`.
+* Provider-aware model resolution lives in `action/src/helpers/modelRouting.ts`.
 * Provider fallback orchestration lives in `action/src/helpers/llmProvider.ts`.
-* OpenRouter fallback provider code lives in `action/src/llm.openrouter.ts`.
+* OpenRouter provider code lives in `action/src/llm.openrouter.ts`.
 * Model routing lives in `action/src/helpers/modelRouting.ts`.
 * Model validation lives in `action/src/helpers/modelValidation.ts`.
 * Inline review skip diagnostics live in `action/src/helpers/reviewDiagnostics.ts`.
@@ -115,11 +118,12 @@ Merge Blocking
 * Large changed functions should be reviewed through a focused excerpt around changed lines.
 * Review strictness is configurable and defaults to balanced behavior.
 * Security review mode is opt-in through `.ai-reviewer.yml` and should not change default prompt behavior when disabled.
-* Model routing is opt-in through `.ai-reviewer.yml` and should preserve the existing default model when disabled.
+* Model routing is opt-in through `.ai-reviewer.yml` and should preserve provider-specific default models when disabled.
 * Model validation defaults to warning on untested configured models; strict mode can require tested models only, and off mode supports advanced custom/private model usage.
 * Provider responses must be validated before model text enters cleanup, confidence scoring, comments, or summary findings.
 * Provider quota, payment, rate-limit, auth, model availability, and network failures should be reflected honestly in logs and summaries.
-* Hugging Face is the default primary provider; OpenRouter is optional fallback when configured and `OPENROUTER_API_KEY` is available.
+* Hugging Face is the default primary provider; OpenRouter can be configured as primary or fallback when `OPENROUTER_API_KEY` is available.
+* Hugging Face and OpenRouter model names must be resolved separately for primary and fallback calls.
 * Inline comments should be attached to changed lines whenever possible.
 * If a function start line is not commentable, use a changed line inside that function.
 * If AST extraction fails or returns no functions, the old scoped diff fallback can be used.

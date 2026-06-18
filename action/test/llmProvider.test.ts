@@ -5,6 +5,7 @@ import {
   callLlmWithFallback,
   LlmProvider,
   LlmProviderCallError,
+  MissingApiKeyProvider,
 } from "../src/helpers/llmProvider";
 
 test("primary provider success does not call fallback", async () => {
@@ -110,6 +111,95 @@ test("fallback is not attempted for non-eligible errors", async () => {
   );
 
   assert.equal(fallbackCalls, 0);
+});
+
+test("OpenRouter primary can fall back to Hugging Face with Hugging Face model", async () => {
+  const calls: Array<{ provider: string; model: string }> = [];
+  const result = await callLlmWithFallback({
+    prompt: "review",
+    primaryProvider: provider("openrouter", async (params) => {
+      calls.push({ provider: "openrouter", model: params.model });
+      const error = new Error("model unavailable");
+      (error as any).status = 404;
+      throw error;
+    }),
+    fallbackProvider: provider("huggingface", async (params) => {
+      calls.push({ provider: "huggingface", model: params.model });
+      return "fallback text";
+    }),
+    primaryModel: "cohere/north-mini-code:free",
+    fallbackModel: "Qwen/Qwen2.5-Coder-32B-Instruct:nscale",
+    fallbackOn: ["model_unavailable"],
+  });
+
+  assert.deepEqual(calls, [
+    {
+      provider: "openrouter",
+      model: "cohere/north-mini-code:free",
+    },
+    {
+      provider: "huggingface",
+      model: "Qwen/Qwen2.5-Coder-32B-Instruct:nscale",
+    },
+  ]);
+  assert.equal(result.provider, "huggingface");
+  assert.equal(result.model, "Qwen/Qwen2.5-Coder-32B-Instruct:nscale");
+});
+
+test("Hugging Face primary can fall back to OpenRouter with OpenRouter model", async () => {
+  const calls: Array<{ provider: string; model: string }> = [];
+  const result = await callLlmWithFallback({
+    prompt: "review",
+    primaryProvider: provider("huggingface", async (params) => {
+      calls.push({ provider: "huggingface", model: params.model });
+      const error = new Error("402 Payment Required");
+      (error as any).status = 402;
+      throw error;
+    }),
+    fallbackProvider: provider("openrouter", async (params) => {
+      calls.push({ provider: "openrouter", model: params.model });
+      return "fallback text";
+    }),
+    primaryModel: "Qwen/Qwen2.5-Coder-32B-Instruct:nscale",
+    fallbackModel: "cohere/north-mini-code:free",
+    fallbackOn: ["quota_exceeded"],
+  });
+
+  assert.deepEqual(calls, [
+    {
+      provider: "huggingface",
+      model: "Qwen/Qwen2.5-Coder-32B-Instruct:nscale",
+    },
+    {
+      provider: "openrouter",
+      model: "cohere/north-mini-code:free",
+    },
+  ]);
+  assert.equal(result.provider, "openrouter");
+  assert.equal(result.model, "cohere/north-mini-code:free");
+});
+
+test("missing OpenRouter key is classified safely as auth failure", async () => {
+  await assert.rejects(
+    () =>
+      callLlmWithFallback({
+        prompt: "review",
+        primaryProvider: new MissingApiKeyProvider(
+          "openrouter",
+          "OPENROUTER_API_KEY"
+        ),
+        primaryModel: "cohere/north-mini-code:free",
+        fallbackOn: ["quota_exceeded"],
+      }),
+    (error) => {
+      assert.ok(error instanceof LlmProviderCallError);
+      assert.equal(error.failure.provider, "openrouter");
+      assert.equal(error.failure.model, "cohere/north-mini-code:free");
+      assert.equal(error.failure.type, "auth_failed");
+      assert.doesNotMatch(error.failure.message, /Bearer|sk-|hf_/);
+      return true;
+    }
+  );
 });
 
 function provider(
