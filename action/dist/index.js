@@ -50,8 +50,8 @@ const reviewPrompt_1 = require("./helpers/reviewPrompt");
 const modelRouting_1 = require("./helpers/modelRouting");
 const reviewDiagnostics_1 = require("./helpers/reviewDiagnostics");
 const fileSourceFetcher_1 = require("./helpers/fileSourceFetcher");
-const modelResponseValidation_1 = require("./helpers/modelResponseValidation");
 const modelValidation_1 = require("./helpers/modelValidation");
+const providerFailures_1 = require("./helpers/providerFailures");
 /* =======================
    Helpers: file filtering
    ======================= */
@@ -263,6 +263,7 @@ async function run() {
         const reviewStrictness = config.review?.strictness ?? "balanced";
         const INLINE_CONFIDENCE_THRESHOLD = (0, config_1.getInlineConfidenceThreshold)(reviewStrictness);
         const modelRoutingEnabled = config.model_routing?.enabled === true;
+        const providerFailureBehavior = config.provider_failures?.behavior ?? "warn";
         if (!config.enabled) {
             core.info("AI reviewer disabled via config");
             return;
@@ -337,6 +338,7 @@ async function run() {
         const reviewedScopedLines = new Set();
         const reviewedFilePaths = new Set();
         const summaryFindings = [];
+        const providerFailures = [];
         let highestAcceptedFindingRisk = "low";
         const labelMap = {
             low: {
@@ -411,7 +413,6 @@ async function run() {
                 functionTargets.length > 0) {
                 for (const target of functionTargets) {
                     const reviewContext = (0, functionReviewTargets_1.getFunctionReviewContext)(target.fn, changedLines);
-                    reviewedFilePaths.add(file.filename);
                     core.debug(`Posting inline comment for ${file.filename} at line ${target.commentLine}`);
                     const prompt = (0, reviewPrompt_1.buildChangedFunctionReviewPrompt)({
                         functionText: reviewContext.focusedText,
@@ -425,6 +426,13 @@ async function run() {
                         raw = await llm.reviewDiff(prompt, modelRoutingEnabled ? inlineReviewModel : undefined);
                     }
                     catch (error) {
+                        const providerFailure = (0, providerFailures_1.createProviderFailure)({
+                            error,
+                            filePath: file.filename,
+                            functionName: target.fn.name,
+                            model: inlineReviewModel,
+                        });
+                        providerFailures.push(providerFailure);
                         (0, reviewDiagnostics_1.logReviewSkip)(core, {
                             filePath: file.filename,
                             functionName: target.fn.name,
@@ -435,9 +443,10 @@ async function run() {
                             securityReviewEnabled,
                             threshold: INLINE_CONFIDENCE_THRESHOLD,
                         });
-                        core.warning(`AI inline review failed for ${file.filename}:${target.fn.name} using ${inlineReviewModel}: ${(0, modelResponseValidation_1.getSafeProviderErrorMessage)(error)}`);
+                        core.warning((0, providerFailures_1.formatProviderFailureForLog)(providerFailure));
                         continue;
                     }
+                    reviewedFilePaths.add(file.filename);
                     const prepared = (0, reviewOutput_1.prepareReviewWithDiagnostics)(raw);
                     const cleaned = prepared.review;
                     if (!cleaned) {
@@ -539,7 +548,6 @@ async function run() {
             core.debug(`Posting inline comment for ${file.filename} at line ${targetLine}`);
             const scopedPatch = (0, extractScopedPatch_1.extractScopedPatch)(patch, targetLine);
             core.debug(`Scoped Patch:\n${scopedPatch}`);
-            reviewedFilePaths.add(file.filename);
             const prompt = (0, reviewPrompt_1.buildScopedReviewPrompt)({
                 fileName: file.filename,
                 targetLine,
@@ -552,6 +560,12 @@ async function run() {
                 raw = await llm.reviewDiff(prompt, modelRoutingEnabled ? inlineReviewModel : undefined);
             }
             catch (error) {
+                const providerFailure = (0, providerFailures_1.createProviderFailure)({
+                    error,
+                    filePath: file.filename,
+                    model: inlineReviewModel,
+                });
+                providerFailures.push(providerFailure);
                 (0, reviewDiagnostics_1.logReviewSkip)(core, {
                     filePath: file.filename,
                     reason: "provider_model_call_failed",
@@ -561,9 +575,10 @@ async function run() {
                     securityReviewEnabled,
                     threshold: INLINE_CONFIDENCE_THRESHOLD,
                 });
-                core.warning(`AI inline review failed for ${file.filename} using ${inlineReviewModel}: ${(0, modelResponseValidation_1.getSafeProviderErrorMessage)(error)}`);
+                core.warning((0, providerFailures_1.formatProviderFailureForLog)(providerFailure));
                 continue;
             }
+            reviewedFilePaths.add(file.filename);
             const prepared = (0, reviewOutput_1.prepareReviewWithDiagnostics)(raw);
             const cleaned = prepared.review;
             if (!cleaned) {
@@ -627,8 +642,20 @@ async function run() {
                 core.warning(`Failed to post inline comment for ${file.filename}: ${error}`);
             }
         }
-        if (reviewedFilePaths.size === 0) {
+        if (reviewedFilePaths.size === 0 && providerFailures.length === 0) {
             core.info("No summary findings to post");
+            return;
+        }
+        if (reviewedFilePaths.size === 0 && providerFailures.length > 0) {
+            await upsertSummaryComment(octokit, owner, repo, pr.number, (0, summaryComment_1.buildSummaryBody)({
+                reviewedFilePaths,
+                findings: summaryFindings,
+                providerFailures,
+                providerFailureBehavior,
+            }));
+            if ((0, providerFailures_1.shouldFailForProviderFailures)(providerFailureBehavior, providerFailures)) {
+                core.setFailed("AI review could not be completed because provider calls failed.");
+            }
             return;
         }
         const finalRisk = highestAcceptedFindingRisk;
@@ -642,6 +669,8 @@ async function run() {
             await upsertSummaryComment(octokit, owner, repo, pr.number, (0, summaryComment_1.buildSummaryBody)({
                 reviewedFilePaths,
                 findings: summaryFindings,
+                providerFailures,
+                providerFailureBehavior,
             }));
             core.setFailed("🚨 AI review detected HIGH-RISK issues. Add 'ai-review: override' to bypass.");
             return;
@@ -652,7 +681,12 @@ async function run() {
         await upsertSummaryComment(octokit, owner, repo, pr.number, (0, summaryComment_1.buildSummaryBody)({
             reviewedFilePaths,
             findings: summaryFindings,
+            providerFailures,
+            providerFailureBehavior,
         }));
+        if ((0, providerFailures_1.shouldFailForProviderFailures)(providerFailureBehavior, providerFailures)) {
+            core.setFailed("AI review completed with provider failures.");
+        }
     }
     catch (error) {
         core.setFailed(error.message);

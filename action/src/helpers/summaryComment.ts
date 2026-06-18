@@ -1,6 +1,11 @@
+import {
+  ProviderFailure,
+  ProviderFailureType,
+} from "./providerFailures";
+
 export const SUMMARY_MARKER = "<!-- ai-code-reviewer-FB:summary -->";
 
-export type SummaryRiskLevel = "low" | "medium" | "high";
+export type SummaryRiskLevel = "low" | "medium" | "high" | "unknown";
 
 export interface SummaryFinding {
   filePath: string;
@@ -12,6 +17,8 @@ export interface SummaryFinding {
 export interface SummaryBodyOptions {
   reviewedFilePaths: Set<string>;
   findings: SummaryFinding[];
+  providerFailures?: ProviderFailure[];
+  providerFailureBehavior?: "warn" | "fail" | "skip";
 }
 
 export function createSummaryFinding({
@@ -36,9 +43,14 @@ export function createSummaryFinding({
 export function buildSummaryBody({
   reviewedFilePaths,
   findings,
+  providerFailures = [],
+  providerFailureBehavior = "warn",
 }: SummaryBodyOptions): string {
   const dedupedFindings = dedupeFindings(findings);
-  const overallRisk = getHighestRisk(dedupedFindings);
+  const overallRisk =
+    reviewedFilePaths.size === 0 && providerFailures.length > 0
+      ? "unknown"
+      : getHighestRisk(dedupedFindings);
   const riskLabel = formatRisk(overallRisk);
 
   return `
@@ -51,15 +63,17 @@ Overall Risk: ${riskLabel}
 
 ## Key Findings
 
-${formatKeyFindings(dedupedFindings)}
+${formatKeyFindings(dedupedFindings, providerFailures)}
+
+${formatProviderFailures(providerFailures, providerFailureBehavior)}
 
 ## Risk Analysis
 
-${formatRiskAnalysis(overallRisk, dedupedFindings.length)}
+${formatRiskAnalysis(overallRisk, dedupedFindings.length, providerFailures)}
 
 ## Suggested Next Steps
 
-${formatNextSteps(overallRisk, dedupedFindings.length)}
+${formatNextSteps(overallRisk, dedupedFindings.length, providerFailures)}
 `;
 }
 
@@ -103,8 +117,15 @@ function extractIssueSummary(review: string): string {
   return firstMeaningfulLine ?? "Review finding needs attention.";
 }
 
-function formatKeyFindings(findings: SummaryFinding[]): string {
+function formatKeyFindings(
+  findings: SummaryFinding[],
+  providerFailures: ProviderFailure[]
+): string {
   if (findings.length === 0) {
+    if (providerFailures.length > 0) {
+      return "No inline findings were produced because provider failures prevented some or all AI review calls from completing.";
+    }
+
     return "No high-confidence issues were found in the reviewed changed functions.";
   }
 
@@ -114,6 +135,25 @@ function formatKeyFindings(findings: SummaryFinding[]): string {
 }
 
 function formatRiskAnalysis(
+  risk: SummaryRiskLevel,
+  findingCount: number,
+  providerFailures: ProviderFailure[]
+): string {
+  if (risk === "unknown") {
+    return "Risk is unknown because AI review could not be completed due to provider failures.";
+  }
+
+  if (providerFailures.length > 0) {
+    return `${formatBaseRiskAnalysis(
+      risk,
+      findingCount
+    )} Some changed functions were not reviewed because provider calls failed.`;
+  }
+
+  return formatBaseRiskAnalysis(risk, findingCount);
+}
+
+function formatBaseRiskAnalysis(
   risk: SummaryRiskLevel,
   findingCount: number
 ): string {
@@ -134,6 +174,25 @@ function formatRiskAnalysis(
 
 function formatNextSteps(
   risk: SummaryRiskLevel,
+  findingCount: number,
+  providerFailures: ProviderFailure[]
+): string {
+  if (risk === "unknown") {
+    return "* Add Hugging Face prepaid credits, upgrade billing, or configure another provider/model.\n* Rerun the workflow after provider access is restored.";
+  }
+
+  if (providerFailures.length > 0) {
+    return `${formatBaseNextSteps(
+      risk,
+      findingCount
+    )}\n* Resolve provider access issues and rerun the workflow to review skipped functions.`;
+  }
+
+  return formatBaseNextSteps(risk, findingCount);
+}
+
+function formatBaseNextSteps(
+  risk: SummaryRiskLevel,
   findingCount: number
 ): string {
   if (findingCount === 0) {
@@ -153,6 +212,88 @@ function formatNextSteps(
 
 function formatRisk(risk: SummaryRiskLevel): string {
   return risk[0].toUpperCase() + risk.slice(1);
+}
+
+function formatProviderFailures(
+  providerFailures: ProviderFailure[],
+  behavior: "warn" | "fail" | "skip"
+): string {
+  if (providerFailures.length === 0) {
+    return "";
+  }
+
+  const quotaOnly = providerFailures.every(
+    (failure) => failure.type === "quota_exceeded"
+  );
+
+  if (behavior === "skip" && !quotaOnly) {
+    return "## Provider Issue\n\nSome provider calls failed, so the AI review may be incomplete.";
+  }
+
+  const intro = quotaOnly
+    ? "AI review could not be completed because the model provider quota was exhausted."
+    : "AI review could not be completed for every changed function because provider calls failed.";
+
+  return `## Provider Issue
+
+${intro}
+
+${dedupeProviderFailures(providerFailures)
+  .map((failure) => `* ${formatProviderFailure(failure)}`)
+  .join("\n")}`;
+}
+
+function formatProviderFailure(failure: ProviderFailure): string {
+  const type = formatProviderFailureType(failure.type);
+  const model = failure.model ? ` for model ${failure.model}` : "";
+  const location = failure.filePath ? ` in \`${failure.filePath}\`` : "";
+
+  return `Hugging Face ${type}${model}${location}.`;
+}
+
+function formatProviderFailureType(type: ProviderFailureType): string {
+  switch (type) {
+    case "quota_exceeded":
+      return "quota exceeded";
+    case "rate_limited":
+      return "rate limited";
+    case "auth_failed":
+      return "authentication failed";
+    case "model_unavailable":
+      return "model unavailable";
+    case "invalid_response":
+      return "invalid response";
+    case "network_error":
+      return "network error";
+    case "unknown":
+    default:
+      return "provider failure";
+  }
+}
+
+function dedupeProviderFailures(
+  providerFailures: ProviderFailure[]
+): ProviderFailure[] {
+  const seen = new Set<string>();
+  const deduped: ProviderFailure[] = [];
+
+  for (const failure of providerFailures) {
+    const key = [
+      failure.filePath ?? "",
+      failure.functionName ?? "",
+      failure.model ?? "",
+      failure.type,
+    ].join(":");
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    deduped.push(failure);
+  }
+
+  return deduped;
 }
 
 function normalizeIssueText(issue: string): string {

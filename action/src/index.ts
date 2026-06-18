@@ -38,8 +38,13 @@ import {
 } from "./helpers/modelRouting";
 import { logReviewSkip } from "./helpers/reviewDiagnostics";
 import { FileSourceFetcher } from "./helpers/fileSourceFetcher";
-import { getSafeProviderErrorMessage } from "./helpers/modelResponseValidation";
 import { validateConfiguredModels } from "./helpers/modelValidation";
+import {
+  createProviderFailure,
+  formatProviderFailureForLog,
+  ProviderFailure,
+  shouldFailForProviderFailures,
+} from "./helpers/providerFailures";
 
 /* =======================
    Helpers: file filtering
@@ -331,6 +336,8 @@ async function run() {
     const INLINE_CONFIDENCE_THRESHOLD =
       getInlineConfidenceThreshold(reviewStrictness);
     const modelRoutingEnabled = config.model_routing?.enabled === true;
+    const providerFailureBehavior =
+      config.provider_failures?.behavior ?? "warn";
 
     if (!config.enabled) {
       core.info("AI reviewer disabled via config");
@@ -427,6 +434,7 @@ async function run() {
     const reviewedScopedLines = new Set<string>();
     const reviewedFilePaths = new Set<string>();
     const summaryFindings: SummaryFinding[] = [];
+    const providerFailures: ProviderFailure[] = [];
     let highestAcceptedFindingRisk: RiskLevel = "low";
 
     interface LabelConfig {
@@ -530,7 +538,6 @@ async function run() {
               target.fn,
               changedLines
             );
-            reviewedFilePaths.add(file.filename);
 
             core.debug(
               `Posting inline comment for ${file.filename} at line ${target.commentLine}`
@@ -551,6 +558,13 @@ async function run() {
                 modelRoutingEnabled ? inlineReviewModel : undefined
               );
             } catch (error) {
+              const providerFailure = createProviderFailure({
+                error,
+                filePath: file.filename,
+                functionName: target.fn.name,
+                model: inlineReviewModel,
+              });
+              providerFailures.push(providerFailure);
               logReviewSkip(core, {
                 filePath: file.filename,
                 functionName: target.fn.name,
@@ -561,13 +575,11 @@ async function run() {
                 securityReviewEnabled,
                 threshold: INLINE_CONFIDENCE_THRESHOLD,
               });
-              core.warning(
-                `AI inline review failed for ${file.filename}:${target.fn.name} using ${inlineReviewModel}: ${getSafeProviderErrorMessage(
-                  error
-                )}`
-              );
+              core.warning(formatProviderFailureForLog(providerFailure));
               continue;
             }
+
+            reviewedFilePaths.add(file.filename);
 
             const prepared = prepareReviewWithDiagnostics(raw);
             const cleaned = prepared.review;
@@ -694,7 +706,6 @@ async function run() {
 
         const scopedPatch = extractScopedPatch(patch, targetLine);
         core.debug(`Scoped Patch:\n${scopedPatch}`);
-        reviewedFilePaths.add(file.filename);
 
         const prompt = buildScopedReviewPrompt({
           fileName: file.filename,
@@ -711,6 +722,12 @@ async function run() {
             modelRoutingEnabled ? inlineReviewModel : undefined
           );
         } catch (error) {
+          const providerFailure = createProviderFailure({
+            error,
+            filePath: file.filename,
+            model: inlineReviewModel,
+          });
+          providerFailures.push(providerFailure);
           logReviewSkip(core, {
             filePath: file.filename,
             reason: "provider_model_call_failed",
@@ -720,13 +737,11 @@ async function run() {
             securityReviewEnabled,
             threshold: INLINE_CONFIDENCE_THRESHOLD,
           });
-          core.warning(
-            `AI inline review failed for ${file.filename} using ${inlineReviewModel}: ${getSafeProviderErrorMessage(
-              error
-            )}`
-          );
+          core.warning(formatProviderFailureForLog(providerFailure));
           continue;
         }
+
+        reviewedFilePaths.add(file.filename);
 
         const prepared = prepareReviewWithDiagnostics(raw);
         const cleaned = prepared.review;
@@ -808,8 +823,33 @@ async function run() {
         }
     }
 
-    if (reviewedFilePaths.size === 0) {
+    if (reviewedFilePaths.size === 0 && providerFailures.length === 0) {
       core.info("No summary findings to post");
+      return;
+    }
+
+    if (reviewedFilePaths.size === 0 && providerFailures.length > 0) {
+      await upsertSummaryComment(
+        octokit,
+        owner,
+        repo,
+        pr.number,
+        buildSummaryBody({
+          reviewedFilePaths,
+          findings: summaryFindings,
+          providerFailures,
+          providerFailureBehavior,
+        })
+      );
+
+      if (
+        shouldFailForProviderFailures(providerFailureBehavior, providerFailures)
+      ) {
+        core.setFailed(
+          "AI review could not be completed because provider calls failed."
+        );
+      }
+
       return;
     }
 
@@ -849,6 +889,8 @@ async function run() {
         buildSummaryBody({
           reviewedFilePaths,
           findings: summaryFindings,
+          providerFailures,
+          providerFailureBehavior,
         })
       );
 
@@ -870,8 +912,14 @@ async function run() {
       buildSummaryBody({
         reviewedFilePaths,
         findings: summaryFindings,
+        providerFailures,
+        providerFailureBehavior,
       })
     );
+
+    if (shouldFailForProviderFailures(providerFailureBehavior, providerFailures)) {
+      core.setFailed("AI review completed with provider failures.");
+    }
   } catch (error: any) {
     core.setFailed(error.message);
   }

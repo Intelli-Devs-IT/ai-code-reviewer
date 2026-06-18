@@ -45,3 +45,20 @@ test("provider failures skip inline comment creation and continue", () => {
     assert.doesNotMatch(block, /createReviewComment/);
   }
 });
+
+test("risk label is skipped when only provider failures occurred", () => {
+  const noReviewedFilesIndex = INDEX_SOURCE.indexOf(
+    "if (reviewedFilePaths.size === 0 && providerFailures.length > 0)"
+  );
+  const labelIndex = INDEX_SOURCE.indexOf("await applyRiskLabel");
+
+  assert.ok(noReviewedFilesIndex > -1);
+  assert.ok(labelIndex > noReviewedFilesIndex);
+});
+
+test("provider failure fail behavior can fail after summary update", () => {
+  assert.match(
+    INDEX_SOURCE,
+    /shouldFailForProviderFailures\(providerFailureBehavior, providerFailures\)[\s\S]*core\.setFailed/
+  );
+});

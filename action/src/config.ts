@@ -1,5 +1,6 @@
 export type ReviewStrictness = "lenient" | "balanced" | "strict";
 export type ModelValidationMode = "strict" | "warn" | "off";
+export type ProviderFailureBehavior = "warn" | "fail" | "skip";
 export type ModelRoutingLanguage =
   | "typescript"
   | "javascript"
@@ -26,6 +27,9 @@ export interface ReviewerConfig {
   model_validation?: {
     mode?: ModelValidationMode;
   };
+  provider_failures?: {
+    behavior?: ProviderFailureBehavior;
+  };
   security_review?: {
     enabled?: boolean;
   };
@@ -44,6 +48,9 @@ export const DEFAULT_CONFIG: ReviewerConfig = {
   },
   model_validation: {
     mode: "warn",
+  },
+  provider_failures: {
+    behavior: "warn",
   },
   security_review: {
     enabled: false,
@@ -68,6 +75,9 @@ export function mergeReviewerConfig(
   const modelValidationMode = normalizeModelValidationMode(
     config.model_validation?.mode
   );
+  const providerFailureBehavior = normalizeProviderFailureBehavior(
+    config.provider_failures?.behavior
+  );
 
   return {
     ...DEFAULT_CONFIG,
@@ -90,6 +100,11 @@ export function mergeReviewerConfig(
       ...(config.model_validation ?? {}),
       mode: modelValidationMode,
     },
+    provider_failures: {
+      ...DEFAULT_CONFIG.provider_failures,
+      ...(config.provider_failures ?? {}),
+      behavior: providerFailureBehavior,
+    },
     security_review: {
       ...DEFAULT_CONFIG.security_review,
       ...(config.security_review ?? {}),
@@ -109,6 +124,16 @@ export function normalizeModelValidationMode(
   value: unknown
 ): ModelValidationMode {
   if (value === "strict" || value === "warn" || value === "off") {
+    return value;
+  }
+
+  return "warn";
+}
+
+export function normalizeProviderFailureBehavior(
+  value: unknown
+): ProviderFailureBehavior {
+  if (value === "warn" || value === "fail" || value === "skip") {
     return value;
   }
 

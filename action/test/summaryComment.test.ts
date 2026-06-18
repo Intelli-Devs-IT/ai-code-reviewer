@@ -111,6 +111,77 @@ test("no-finding summary message is shown when appropriate", () => {
   );
 });
 
+test("all quota-failed provider calls produce unknown-risk summary", () => {
+  const body = buildSummaryBody({
+    reviewedFilePaths: new Set(),
+    findings: [],
+    providerFailures: [
+      {
+        filePath: "src/a.ts",
+        functionName: "loadUser",
+        model: "Qwen/Qwen2.5-Coder-32B-Instruct:nscale",
+        type: "quota_exceeded",
+        message: "402 Payment Required",
+      },
+    ],
+  });
+
+  assert.match(body, /Files Reviewed: 0/);
+  assert.match(body, /Inline Findings: 0/);
+  assert.match(body, /Overall Risk: Unknown/);
+  assert.match(
+    body,
+    /AI review could not be completed because the model provider quota was exhausted\./
+  );
+  assert.match(
+    body,
+    /Hugging Face quota exceeded for model Qwen\/Qwen2\.5-Coder-32B-Instruct:nscale/
+  );
+  assert.match(body, /Add Hugging Face prepaid credits/);
+});
+
+test("mixed success and provider failure summary mentions partial review", () => {
+  const body = buildSummaryBody({
+    reviewedFilePaths: new Set(["src/a.ts"]),
+    findings: [createFinding("src/a.ts", "ISSUE:\nAccepted issue.", "low")],
+    providerFailures: [
+      {
+        filePath: "src/b.ts",
+        model: "Qwen/Qwen2.5-Coder-32B-Instruct:nscale",
+        type: "quota_exceeded",
+        message: "402 Payment Required",
+      },
+    ],
+  });
+
+  assert.match(body, /Files Reviewed: 1/);
+  assert.match(body, /Inline Findings: 1/);
+  assert.match(body, /Overall Risk: Low/);
+  assert.match(body, /Some changed functions were not reviewed/);
+  assert.match(body, /Resolve provider access issues and rerun the workflow/);
+});
+
+test("skip behavior keeps provider failure summary concise", () => {
+  const body = buildSummaryBody({
+    reviewedFilePaths: new Set(["src/a.ts"]),
+    findings: [],
+    providerFailureBehavior: "skip",
+    providerFailures: [
+      {
+        filePath: "src/b.ts",
+        model: "custom/model",
+        type: "network_error",
+        message: "fetch failed",
+      },
+    ],
+  });
+
+  assert.match(
+    body,
+    /Some provider calls failed, so the AI review may be incomplete\./
+  );
+});
+
 test("multiple reviewed functions in one file still count as one file", () => {
   const body = buildSummaryBody({
     reviewedFilePaths: new Set(["src/a.ts"]),

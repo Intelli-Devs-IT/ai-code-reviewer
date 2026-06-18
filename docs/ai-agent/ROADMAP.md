@@ -25,6 +25,7 @@
 * configurable review strictness
 * basic model routing configuration
 * configurable model validation for tested, custom, private, and experimental models
+* provider quota/payment failure handling in logs and summary output
 
 ## Current Focus
 

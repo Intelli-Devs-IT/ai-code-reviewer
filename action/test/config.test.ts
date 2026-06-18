@@ -26,6 +26,11 @@ test("config defaults model validation mode to warn", () => {
   assert.equal(mergeReviewerConfig().model_validation?.mode, "warn");
 });
 
+test("config defaults provider failure behavior to warn", () => {
+  assert.equal(DEFAULT_CONFIG.provider_failures?.behavior, "warn");
+  assert.equal(mergeReviewerConfig().provider_failures?.behavior, "warn");
+});
+
 test("config reads model validation modes", () => {
   assert.equal(
     mergeReviewerConfig({
@@ -43,6 +48,35 @@ test("config reads model validation modes", () => {
     }).model_validation?.mode,
     "off"
   );
+});
+
+test("config reads provider failure behaviors", () => {
+  assert.equal(
+    mergeReviewerConfig({
+      provider_failures: {
+        behavior: "fail",
+      },
+    }).provider_failures?.behavior,
+    "fail"
+  );
+  assert.equal(
+    mergeReviewerConfig({
+      provider_failures: {
+        behavior: "skip",
+      },
+    }).provider_failures?.behavior,
+    "skip"
+  );
+});
+
+test("invalid provider failure behavior falls back to warn", () => {
+  const config = mergeReviewerConfig({
+    provider_failures: {
+      behavior: "ignore" as any,
+    },
+  });
+
+  assert.equal(config.provider_failures?.behavior, "warn");
 });
 
 test("invalid model validation mode falls back to warn", () => {

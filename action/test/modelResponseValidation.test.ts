@@ -45,6 +45,18 @@ test("rejects empty and whitespace response text", () => {
   );
 });
 
+test("rejects provider quota message returned as text", () => {
+  assert.throws(
+    () =>
+      assertValidModelResponseText({
+        text: "You have depleted your monthly included credits. Purchase pre-paid credits to continue using Inference Providers.",
+        model,
+        provider: "Hugging Face",
+      }),
+    /provider_error_response/
+  );
+});
+
 test("accepts valid plain text response", () => {
   const text = "ISSUE:\nPossible null access.\n\nIMPACT:\nThis can throw.";
 

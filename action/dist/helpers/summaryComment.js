@@ -14,9 +14,11 @@ function createSummaryFinding({ filePath, functionName, review, risk, }) {
         risk,
     };
 }
-function buildSummaryBody({ reviewedFilePaths, findings, }) {
+function buildSummaryBody({ reviewedFilePaths, findings, providerFailures = [], providerFailureBehavior = "warn", }) {
     const dedupedFindings = dedupeFindings(findings);
-    const overallRisk = getHighestRisk(dedupedFindings);
+    const overallRisk = reviewedFilePaths.size === 0 && providerFailures.length > 0
+        ? "unknown"
+        : getHighestRisk(dedupedFindings);
     const riskLabel = formatRisk(overallRisk);
     return `
 ${exports.SUMMARY_MARKER}
@@ -28,15 +30,17 @@ Overall Risk: ${riskLabel}
 
 ## Key Findings
 
-${formatKeyFindings(dedupedFindings)}
+${formatKeyFindings(dedupedFindings, providerFailures)}
+
+${formatProviderFailures(providerFailures, providerFailureBehavior)}
 
 ## Risk Analysis
 
-${formatRiskAnalysis(overallRisk, dedupedFindings.length)}
+${formatRiskAnalysis(overallRisk, dedupedFindings.length, providerFailures)}
 
 ## Suggested Next Steps
 
-${formatNextSteps(overallRisk, dedupedFindings.length)}
+${formatNextSteps(overallRisk, dedupedFindings.length, providerFailures)}
 `;
 }
 function getHighestRisk(findings) {
@@ -72,15 +76,27 @@ function extractIssueSummary(review) {
         .find((line) => line.length > 0);
     return firstMeaningfulLine ?? "Review finding needs attention.";
 }
-function formatKeyFindings(findings) {
+function formatKeyFindings(findings, providerFailures) {
     if (findings.length === 0) {
+        if (providerFailures.length > 0) {
+            return "No inline findings were produced because provider failures prevented some or all AI review calls from completing.";
+        }
         return "No high-confidence issues were found in the reviewed changed functions.";
     }
     return findings
         .map((finding) => `* \`${finding.filePath}\`: ${finding.issue}`)
         .join("\n");
 }
-function formatRiskAnalysis(risk, findingCount) {
+function formatRiskAnalysis(risk, findingCount, providerFailures) {
+    if (risk === "unknown") {
+        return "Risk is unknown because AI review could not be completed due to provider failures.";
+    }
+    if (providerFailures.length > 0) {
+        return `${formatBaseRiskAnalysis(risk, findingCount)} Some changed functions were not reviewed because provider calls failed.`;
+    }
+    return formatBaseRiskAnalysis(risk, findingCount);
+}
+function formatBaseRiskAnalysis(risk, findingCount) {
     if (findingCount === 0) {
         return "Low risk because no high-confidence issues were found in the reviewed changed functions.";
     }
@@ -92,7 +108,16 @@ function formatRiskAnalysis(risk, findingCount) {
     }
     return "Low risk because accepted findings appear limited in scope and no medium or high-risk finding was identified.";
 }
-function formatNextSteps(risk, findingCount) {
+function formatNextSteps(risk, findingCount, providerFailures) {
+    if (risk === "unknown") {
+        return "* Add Hugging Face prepaid credits, upgrade billing, or configure another provider/model.\n* Rerun the workflow after provider access is restored.";
+    }
+    if (providerFailures.length > 0) {
+        return `${formatBaseNextSteps(risk, findingCount)}\n* Resolve provider access issues and rerun the workflow to review skipped functions.`;
+    }
+    return formatBaseNextSteps(risk, findingCount);
+}
+function formatBaseNextSteps(risk, findingCount) {
     if (findingCount === 0) {
         return "* No immediate action required from the AI review.\n* Review the changed functions manually as usual before merge.";
     }
@@ -106,6 +131,68 @@ function formatNextSteps(risk, findingCount) {
 }
 function formatRisk(risk) {
     return risk[0].toUpperCase() + risk.slice(1);
+}
+function formatProviderFailures(providerFailures, behavior) {
+    if (providerFailures.length === 0) {
+        return "";
+    }
+    const quotaOnly = providerFailures.every((failure) => failure.type === "quota_exceeded");
+    if (behavior === "skip" && !quotaOnly) {
+        return "## Provider Issue\n\nSome provider calls failed, so the AI review may be incomplete.";
+    }
+    const intro = quotaOnly
+        ? "AI review could not be completed because the model provider quota was exhausted."
+        : "AI review could not be completed for every changed function because provider calls failed.";
+    return `## Provider Issue
+
+${intro}
+
+${dedupeProviderFailures(providerFailures)
+        .map((failure) => `* ${formatProviderFailure(failure)}`)
+        .join("\n")}`;
+}
+function formatProviderFailure(failure) {
+    const type = formatProviderFailureType(failure.type);
+    const model = failure.model ? ` for model ${failure.model}` : "";
+    const location = failure.filePath ? ` in \`${failure.filePath}\`` : "";
+    return `Hugging Face ${type}${model}${location}.`;
+}
+function formatProviderFailureType(type) {
+    switch (type) {
+        case "quota_exceeded":
+            return "quota exceeded";
+        case "rate_limited":
+            return "rate limited";
+        case "auth_failed":
+            return "authentication failed";
+        case "model_unavailable":
+            return "model unavailable";
+        case "invalid_response":
+            return "invalid response";
+        case "network_error":
+            return "network error";
+        case "unknown":
+        default:
+            return "provider failure";
+    }
+}
+function dedupeProviderFailures(providerFailures) {
+    const seen = new Set();
+    const deduped = [];
+    for (const failure of providerFailures) {
+        const key = [
+            failure.filePath ?? "",
+            failure.functionName ?? "",
+            failure.model ?? "",
+            failure.type,
+        ].join(":");
+        if (seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+        deduped.push(failure);
+    }
+    return deduped;
 }
 function normalizeIssueText(issue) {
     return issue.toLowerCase().replace(/\s+/g, " ").trim();

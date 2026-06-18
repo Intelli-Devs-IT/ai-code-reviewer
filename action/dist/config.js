@@ -4,6 +4,7 @@ exports.DEFAULT_CONFIG = void 0;
 exports.mergeReviewerConfig = mergeReviewerConfig;
 exports.normalizeReviewStrictness = normalizeReviewStrictness;
 exports.normalizeModelValidationMode = normalizeModelValidationMode;
+exports.normalizeProviderFailureBehavior = normalizeProviderFailureBehavior;
 exports.getInlineConfidenceThreshold = getInlineConfidenceThreshold;
 exports.DEFAULT_CONFIG = {
     enabled: true,
@@ -18,6 +19,9 @@ exports.DEFAULT_CONFIG = {
     },
     model_validation: {
         mode: "warn",
+    },
+    provider_failures: {
+        behavior: "warn",
     },
     security_review: {
         enabled: false,
@@ -37,6 +41,7 @@ exports.DEFAULT_CONFIG = {
 function mergeReviewerConfig(config = {}) {
     const strictness = normalizeReviewStrictness(config.review?.strictness);
     const modelValidationMode = normalizeModelValidationMode(config.model_validation?.mode);
+    const providerFailureBehavior = normalizeProviderFailureBehavior(config.provider_failures?.behavior);
     return {
         ...exports.DEFAULT_CONFIG,
         ...config,
@@ -58,6 +63,11 @@ function mergeReviewerConfig(config = {}) {
             ...(config.model_validation ?? {}),
             mode: modelValidationMode,
         },
+        provider_failures: {
+            ...exports.DEFAULT_CONFIG.provider_failures,
+            ...(config.provider_failures ?? {}),
+            behavior: providerFailureBehavior,
+        },
         security_review: {
             ...exports.DEFAULT_CONFIG.security_review,
             ...(config.security_review ?? {}),
@@ -72,6 +82,12 @@ function normalizeReviewStrictness(value) {
 }
 function normalizeModelValidationMode(value) {
     if (value === "strict" || value === "warn" || value === "off") {
+        return value;
+    }
+    return "warn";
+}
+function normalizeProviderFailureBehavior(value) {
+    if (value === "warn" || value === "fail" || value === "skip") {
         return value;
     }
     return "warn";

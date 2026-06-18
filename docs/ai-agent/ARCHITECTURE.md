@@ -11,16 +11,17 @@
 7. Changed-function matching
 8. LLM review generation
 9. Provider response validation
-10. Configurable inline prompt modes
-11. Optional model routing by file language
-12. Configurable model validation
-13. Model output cleanup
-14. Confidence scoring
-15. Inline comment posting
-16. Summary comment creation/update
-17. Risk classification
-18. Risk label handling
-19. Merge blocking
+10. Provider failure classification
+11. Configurable inline prompt modes
+12. Optional model routing by file language
+13. Configurable model validation
+14. Model output cleanup
+15. Confidence scoring
+16. Inline comment posting
+17. Summary comment creation/update
+18. Risk classification
+19. Risk label handling
+20. Merge blocking
 
 ## Architecture Diagram
 
@@ -43,6 +44,8 @@ Match Changed Lines to Functions
 Review Each Changed Function Once
 ↓
 Validate Provider Response
+↓
+Classify Provider Failures
 ↓
 Clean + Normalize LLM Output
 ↓
@@ -88,6 +91,7 @@ Merge Blocking
 * Full file source fetching lives in `action/src/helpers/fileSourceFetcher.ts` and uses cached Git tree/blob API calls for PR head content.
 * Inline review prompt formatting lives in `action/src/helpers/reviewPrompt.ts`.
 * Provider response validation lives in `action/src/helpers/modelResponseValidation.ts`.
+* Provider failure classification lives in `action/src/helpers/providerFailures.ts`.
 * Model routing lives in `action/src/helpers/modelRouting.ts`.
 * Model validation lives in `action/src/helpers/modelValidation.ts`.
 * Inline review skip diagnostics live in `action/src/helpers/reviewDiagnostics.ts`.
@@ -109,6 +113,7 @@ Merge Blocking
 * Model routing is opt-in through `.ai-reviewer.yml` and should preserve the existing default model when disabled.
 * Model validation defaults to warning on untested configured models; strict mode can require tested models only, and off mode supports advanced custom/private model usage.
 * Provider responses must be validated before model text enters cleanup, confidence scoring, comments, or summary findings.
+* Provider quota, payment, rate-limit, auth, model availability, and network failures should be reflected honestly in logs and summaries.
 * Inline comments should be attached to changed lines whenever possible.
 * If a function start line is not commentable, use a changed line inside that function.
 * If AST extraction fails or returns no functions, the old scoped diff fallback can be used.

@@ -6,7 +6,7 @@ exports.TESTED_HUGGINGFACE_MODELS = [
     "Qwen/Qwen2.5-Coder-32B-Instruct:nscale",
     "deepseek-ai/DeepSeek-Coder-V2-Instruct",
     "bigcode/starcoder2-15b-instruct",
-    "Qwen/Qwen3.6-35B-A3B:featherless-ai",
+    "Qwen/Qwen3.6-35B-A3B:deepinfra",
     "zai-org/GLM-5.1:together",
     "Qwen/Qwen3-Coder-Next:novita",
     "deepseek-ai/DeepSeek-V4-Flash:novita",

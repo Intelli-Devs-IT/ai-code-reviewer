@@ -90,6 +90,9 @@ function isObviousProviderErrorResponse(text) {
         normalized.startsWith("rate limit") ||
         normalized.startsWith("rate-limit") ||
         normalized.startsWith("too many requests") ||
+        normalized.includes("depleted your monthly included credits") ||
+        normalized.includes("monthly included credits") ||
+        normalized.includes("payment required") ||
         normalized.includes("model is currently loading") ||
         normalized.includes("model is unavailable") ||
         normalized.includes("service unavailable") ||
