@@ -36,7 +36,7 @@ test("config defaults provider failure behavior to warn", () => {
 test("config defaults providers to huggingface without fallback", () => {
   const config = mergeReviewerConfig();
 
-  assert.equal(config.providers?.primary, "openrouter");
+  assert.equal(config.providers?.primary, "huggingface");
   assert.equal(config.providers?.fallback, undefined);
   assert.deepEqual(config.providers?.fallback_on, DEFAULT_PROVIDER_FALLBACK_ON);
 });
@@ -89,7 +89,7 @@ test("config reads provider failure behaviors", () => {
 test("config reads provider fallback settings", () => {
   const config = mergeReviewerConfig({
     providers: {
-      primary: "openrouter",
+      primary: "huggingface",
       fallback: "openrouter",
       fallback_on: ["quota_exceeded"],
     },
@@ -98,7 +98,7 @@ test("config reads provider fallback settings", () => {
     },
   });
 
-  assert.equal(config.providers?.primary, "openrouter");
+  assert.equal(config.providers?.primary, "huggingface");
   assert.equal(config.providers?.fallback, "openrouter");
   assert.deepEqual(config.providers?.fallback_on, ["quota_exceeded"]);
   assert.equal(config.openrouter?.default_model, "openrouter/custom-model");
