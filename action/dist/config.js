@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.DEFAULT_CONFIG = void 0;
 exports.mergeReviewerConfig = mergeReviewerConfig;
 exports.normalizeReviewStrictness = normalizeReviewStrictness;
+exports.normalizeModelValidationMode = normalizeModelValidationMode;
 exports.getInlineConfidenceThreshold = getInlineConfidenceThreshold;
 exports.DEFAULT_CONFIG = {
     enabled: true,
@@ -14,6 +15,9 @@ exports.DEFAULT_CONFIG = {
     model_routing: {
         enabled: false,
         routes: {},
+    },
+    model_validation: {
+        mode: "warn",
     },
     security_review: {
         enabled: false,
@@ -32,6 +36,7 @@ exports.DEFAULT_CONFIG = {
 };
 function mergeReviewerConfig(config = {}) {
     const strictness = normalizeReviewStrictness(config.review?.strictness);
+    const modelValidationMode = normalizeModelValidationMode(config.model_validation?.mode);
     return {
         ...exports.DEFAULT_CONFIG,
         ...config,
@@ -48,6 +53,11 @@ function mergeReviewerConfig(config = {}) {
                 ...(config.model_routing?.routes ?? {}),
             },
         },
+        model_validation: {
+            ...exports.DEFAULT_CONFIG.model_validation,
+            ...(config.model_validation ?? {}),
+            mode: modelValidationMode,
+        },
         security_review: {
             ...exports.DEFAULT_CONFIG.security_review,
             ...(config.security_review ?? {}),
@@ -59,6 +69,12 @@ function normalizeReviewStrictness(value) {
         return value;
     }
     return "balanced";
+}
+function normalizeModelValidationMode(value) {
+    if (value === "strict" || value === "warn" || value === "off") {
+        return value;
+    }
+    return "warn";
 }
 function getInlineConfidenceThreshold(strictness) {
     switch (strictness) {

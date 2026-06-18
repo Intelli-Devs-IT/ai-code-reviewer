@@ -13,13 +13,14 @@
 9. Provider response validation
 10. Configurable inline prompt modes
 11. Optional model routing by file language
-12. Model output cleanup
-13. Confidence scoring
-14. Inline comment posting
-15. Summary comment creation/update
-16. Risk classification
-17. Risk label handling
-18. Merge blocking
+12. Configurable model validation
+13. Model output cleanup
+14. Confidence scoring
+15. Inline comment posting
+16. Summary comment creation/update
+17. Risk classification
+18. Risk label handling
+19. Merge blocking
 
 ## Architecture Diagram
 
@@ -88,6 +89,7 @@ Merge Blocking
 * Inline review prompt formatting lives in `action/src/helpers/reviewPrompt.ts`.
 * Provider response validation lives in `action/src/helpers/modelResponseValidation.ts`.
 * Model routing lives in `action/src/helpers/modelRouting.ts`.
+* Model validation lives in `action/src/helpers/modelValidation.ts`.
 * Inline review skip diagnostics live in `action/src/helpers/reviewDiagnostics.ts`.
 * Changed line extraction lives in `action/src/helpers/util.helpers.ts`.
 * Scoped patch fallback logic lives in `action/src/helpers/extractScopedPatch.ts`.
@@ -105,6 +107,7 @@ Merge Blocking
 * Review strictness is configurable and defaults to balanced behavior.
 * Security review mode is opt-in through `.ai-reviewer.yml` and should not change default prompt behavior when disabled.
 * Model routing is opt-in through `.ai-reviewer.yml` and should preserve the existing default model when disabled.
+* Model validation defaults to warning on untested configured models; strict mode can require tested models only, and off mode supports advanced custom/private model usage.
 * Provider responses must be validated before model text enters cleanup, confidence scoring, comments, or summary findings.
 * Inline comments should be attached to changed lines whenever possible.
 * If a function start line is not commentable, use a changed line inside that function.

@@ -1,4 +1,5 @@
 export type ReviewStrictness = "lenient" | "balanced" | "strict";
+export type ModelValidationMode = "strict" | "warn" | "off";
 export type ModelRoutingLanguage =
   | "typescript"
   | "javascript"
@@ -22,6 +23,9 @@ export interface ReviewerConfig {
     default_model?: string;
     routes?: Partial<Record<ModelRoutingLanguage, string>>;
   };
+  model_validation?: {
+    mode?: ModelValidationMode;
+  };
   security_review?: {
     enabled?: boolean;
   };
@@ -37,6 +41,9 @@ export const DEFAULT_CONFIG: ReviewerConfig = {
   model_routing: {
     enabled: false,
     routes: {},
+  },
+  model_validation: {
+    mode: "warn",
   },
   security_review: {
     enabled: false,
@@ -58,6 +65,9 @@ export function mergeReviewerConfig(
   config: Partial<ReviewerConfig> = {}
 ): ReviewerConfig {
   const strictness = normalizeReviewStrictness(config.review?.strictness);
+  const modelValidationMode = normalizeModelValidationMode(
+    config.model_validation?.mode
+  );
 
   return {
     ...DEFAULT_CONFIG,
@@ -75,6 +85,11 @@ export function mergeReviewerConfig(
         ...(config.model_routing?.routes ?? {}),
       },
     },
+    model_validation: {
+      ...DEFAULT_CONFIG.model_validation,
+      ...(config.model_validation ?? {}),
+      mode: modelValidationMode,
+    },
     security_review: {
       ...DEFAULT_CONFIG.security_review,
       ...(config.security_review ?? {}),
@@ -88,6 +103,16 @@ export function normalizeReviewStrictness(value: unknown): ReviewStrictness {
   }
 
   return "balanced";
+}
+
+export function normalizeModelValidationMode(
+  value: unknown
+): ModelValidationMode {
+  if (value === "strict" || value === "warn" || value === "off") {
+    return value;
+  }
+
+  return "warn";
 }
 
 export function getInlineConfidenceThreshold(

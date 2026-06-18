@@ -24,6 +24,7 @@
 * optional security review mode
 * configurable review strictness
 * basic model routing configuration
+* configurable model validation for tested, custom, private, and experimental models
 
 ## Current Focus
 

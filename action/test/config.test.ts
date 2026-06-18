@@ -21,6 +21,40 @@ test("config defaults model routing to disabled", () => {
   assert.equal(mergeReviewerConfig().model_routing?.enabled, false);
 });
 
+test("config defaults model validation mode to warn", () => {
+  assert.equal(DEFAULT_CONFIG.model_validation?.mode, "warn");
+  assert.equal(mergeReviewerConfig().model_validation?.mode, "warn");
+});
+
+test("config reads model validation modes", () => {
+  assert.equal(
+    mergeReviewerConfig({
+      model_validation: {
+        mode: "strict",
+      },
+    }).model_validation?.mode,
+    "strict"
+  );
+  assert.equal(
+    mergeReviewerConfig({
+      model_validation: {
+        mode: "off",
+      },
+    }).model_validation?.mode,
+    "off"
+  );
+});
+
+test("invalid model validation mode falls back to warn", () => {
+  const config = mergeReviewerConfig({
+    model_validation: {
+      mode: "loud" as any,
+    },
+  });
+
+  assert.equal(config.model_validation?.mode, "warn");
+});
+
 test("config reads enabled security review mode", () => {
   const config = mergeReviewerConfig({
     enabled: true,

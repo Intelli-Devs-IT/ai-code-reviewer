@@ -18,6 +18,7 @@ This file describes what the project currently does. Treat the codebase as the f
 * Lenient strictness is tuned to surface concrete edge-case, safety, and maintainability feedback without disabling NO_REVIEW.
 * Optional security review mode can strengthen inline prompts for security-sensitive code.
 * Optional model routing can select model names by detected file language.
+* Model validation supports `strict`, `warn`, and `off` modes; `warn` is the default and allows untested custom/private models with warnings.
 * Provider responses are validated so empty responses, raw HTML, and obvious provider errors are skipped before review cleanup and scoring.
 * Inline comments are posted near the correct function area.
 * Unchanged functions are ignored by the AST-based inline review path.

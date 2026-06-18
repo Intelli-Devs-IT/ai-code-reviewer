@@ -51,6 +51,7 @@ const modelRouting_1 = require("./helpers/modelRouting");
 const reviewDiagnostics_1 = require("./helpers/reviewDiagnostics");
 const fileSourceFetcher_1 = require("./helpers/fileSourceFetcher");
 const modelResponseValidation_1 = require("./helpers/modelResponseValidation");
+const modelValidation_1 = require("./helpers/modelValidation");
 /* =======================
    Helpers: file filtering
    ======================= */
@@ -266,6 +267,7 @@ async function run() {
             core.info("AI reviewer disabled via config");
             return;
         }
+        (0, modelValidation_1.validateConfiguredModels)(config, core);
         /* =======================
            Init LLM (optional)
            ======================= */

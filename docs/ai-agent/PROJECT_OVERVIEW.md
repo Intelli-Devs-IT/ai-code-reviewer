@@ -47,6 +47,8 @@ Optional security-focused inline review can be enabled with `security_review.ena
 
 Optional model routing can be enabled with `model_routing.enabled: true`. When disabled or missing, the existing default model is used.
 
+Model validation can be configured with `model_validation.mode`. It defaults to `warn`, which allows custom/private/experimental models while warning when a configured model is outside the tested model list. Use `strict` to allow only tested models, or `off` to disable model-name validation.
+
 Example `.ai-reviewer.yml`:
 
 ```yaml
@@ -74,4 +76,7 @@ model_routing:
     typescript: qwen/qwen2.5-coder-32b-instruct
     javascript: qwen/qwen2.5-coder-32b-instruct
     markdown: small-model-name
+
+model_validation:
+  mode: warn
 ```

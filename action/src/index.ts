@@ -39,6 +39,7 @@ import {
 import { logReviewSkip } from "./helpers/reviewDiagnostics";
 import { FileSourceFetcher } from "./helpers/fileSourceFetcher";
 import { getSafeProviderErrorMessage } from "./helpers/modelResponseValidation";
+import { validateConfiguredModels } from "./helpers/modelValidation";
 
 /* =======================
    Helpers: file filtering
@@ -335,6 +336,9 @@ async function run() {
       core.info("AI reviewer disabled via config");
       return;
     }
+
+    validateConfiguredModels(config, core);
+
     /* =======================
        Init LLM (optional)
        ======================= */
