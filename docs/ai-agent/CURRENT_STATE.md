@@ -15,6 +15,7 @@ This file describes what the project currently does. Treat the codebase as the f
 * Each changed function is reviewed once within the current run.
 * Large changed functions use focused context around changed lines to reduce token waste.
 * Review strictness can be configured as lenient, balanced, or strict.
+* Review cost and noise limits can cap inline comments, changed functions per file, and total changed functions reviewed per PR.
 * Lenient strictness is tuned to surface concrete edge-case, safety, and maintainability feedback without disabling NO_REVIEW.
 * Optional security review mode can strengthen inline prompts for security-sensitive code.
 * Optional model routing can select model names by detected file language.
@@ -28,6 +29,7 @@ This file describes what the project currently does. Treat the codebase as the f
 * Summary file count is based on unique files that entered inline AST or fallback review.
 * Summary content is concise and based on accepted inline findings across the PR run.
 * Summary findings are deduplicated and include file paths, inline finding count, overall risk, risk analysis, and next steps.
+* Summary comments mention when review coverage is partial because configured review limits were reached.
 * Confidence scoring is used to skip weak inline reviews.
 * Inline review skip diagnostics log safe reasons when comments are not posted.
 * Risk is classified as low, medium, or high.

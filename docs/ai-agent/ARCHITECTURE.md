@@ -14,15 +14,16 @@
 10. Provider failure classification
 11. Provider-aware model resolution and optional provider fallback
 12. Configurable inline prompt modes
-13. Optional model routing by file language
-14. Configurable model validation
-15. Model output cleanup
-16. Confidence scoring
-17. Inline comment posting
-18. Summary comment creation/update
-19. Risk classification
-20. Risk label handling
-21. Merge blocking
+13. Configurable review cost and noise limits
+14. Optional model routing by file language
+15. Configurable model validation
+16. Model output cleanup
+17. Confidence scoring
+18. Inline comment posting
+19. Summary comment creation/update
+20. Risk classification
+21. Risk label handling
+22. Merge blocking
 
 ## Architecture Diagram
 
@@ -43,6 +44,8 @@ AST Function Extraction
 Match Changed Lines to Functions
 ↓
 Review Each Changed Function Once
+↓
+Apply Review Limits
 ↓
 Validate Provider Response
 ↓
@@ -95,6 +98,7 @@ Merge Blocking
 * Config loading lives in `action/src/load-config.ts`.
 * Full file source fetching lives in `action/src/helpers/fileSourceFetcher.ts` and uses cached Git tree/blob API calls for PR head content.
 * Inline review prompt formatting lives in `action/src/helpers/reviewPrompt.ts`.
+* Review cost and noise limit tracking lives in `action/src/helpers/reviewLimits.ts`.
 * Provider response validation lives in `action/src/helpers/modelResponseValidation.ts`.
 * Provider failure classification lives in `action/src/helpers/providerFailures.ts`.
 * Provider-aware model resolution lives in `action/src/helpers/modelRouting.ts`.
@@ -117,6 +121,7 @@ Merge Blocking
 * One changed function should produce at most one inline review.
 * Large changed functions should be reviewed through a focused excerpt around changed lines.
 * Review strictness is configurable and defaults to balanced behavior.
+* Review limits cap inline comments, changed functions per file, and changed functions across the PR run.
 * Security review mode is opt-in through `.ai-reviewer.yml` and should not change default prompt behavior when disabled.
 * Model routing is opt-in through `.ai-reviewer.yml` and should preserve provider-specific default models when disabled.
 * Model validation defaults to warning on untested configured models; strict mode can require tested models only, and off mode supports advanced custom/private model usage.
@@ -128,6 +133,7 @@ Merge Blocking
 * If a function start line is not commentable, use a changed line inside that function.
 * If AST extraction fails or returns no functions, the old scoped diff fallback can be used.
 * Summary comment should be single and updated on reruns.
+* Summary comments should mention partial AI review coverage when configured review limits skip changed functions.
 * Risk labels must be handled safely.
 * Missing labels must not crash the workflow.
 * Merge blocking should only happen for high-risk issues.

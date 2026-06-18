@@ -41,7 +41,7 @@ Current review behavior is centered on changed functions when AST extraction suc
 
 Configuration is loaded from `.ai-reviewer.yml` when available. Agents changing configuration behavior must update tests and documentation in the same task.
 
-Review strictness can be configured with `review.strictness`. It defaults to `balanced` when the field is missing.
+Review strictness can be configured with `review.strictness`. It defaults to `balanced` when the field is missing. Review cost and comment noise can be controlled with `review.max_inline_comments`, `review.max_functions_per_file`, and `review.max_total_functions`.
 
 Optional security-focused inline review can be enabled with `security_review.enabled: true`. It is disabled by default when the field is missing.
 
@@ -69,6 +69,9 @@ exclude:
 
 review:
   strictness: balanced
+  max_inline_comments: 10
+  max_functions_per_file: 5
+  max_total_functions: 30
 
 security_review:
   enabled: false

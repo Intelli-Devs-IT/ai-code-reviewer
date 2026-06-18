@@ -50,6 +50,15 @@ import {
   LlmProviderCallError,
   MissingApiKeyProvider,
 } from "./helpers/llmProvider";
+import {
+  createReviewLimitState,
+  getFunctionReviewLimitSkip,
+  getInlineCommentLimitSkip,
+  getReviewLimits,
+  recordAcceptedInlineComment,
+  recordFunctionReviewAttempt,
+  recordReviewLimitSkip,
+} from "./helpers/reviewLimits";
 
 /* =======================
    Helpers: file filtering
@@ -368,6 +377,8 @@ async function run() {
     const fallbackOn = config.providers?.fallback_on ?? [];
     const primaryProviderName = config.providers?.primary ?? "huggingface";
     const fallbackProviderName = config.providers?.fallback;
+    const reviewLimits = getReviewLimits(config);
+    const reviewLimitState = createReviewLimitState(reviewLimits);
 
     if (!config.enabled) {
       core.info("AI reviewer disabled via config");
@@ -547,6 +558,7 @@ async function run() {
               config,
             })
           : undefined;
+        let attemptedFunctionsForFile = 0;
 
         core.info(
           [
@@ -610,6 +622,29 @@ async function run() {
           functionTargets.length > 0
         ) {
           for (const target of functionTargets) {
+            const limitSkip = getFunctionReviewLimitSkip({
+              state: reviewLimitState,
+              attemptedFunctionsForFile,
+            });
+
+            if (limitSkip) {
+              recordReviewLimitSkip(reviewLimitState, limitSkip.reason);
+              logReviewSkip(core, {
+                filePath: file.filename,
+                functionName: target.fn.name,
+                reason: limitSkip.reason,
+                provider: primaryProviderName,
+                model: inlineReviewModel,
+                language: inlineLanguage,
+                reviewStrictness,
+                securityReviewEnabled,
+                threshold: INLINE_CONFIDENCE_THRESHOLD,
+                limit: limitSkip.limit,
+                skippedFunctions: 1,
+              });
+              continue;
+            }
+
             const reviewContext = getFunctionReviewContext(
               target.fn,
               changedLines
@@ -630,6 +665,8 @@ async function run() {
             let raw: string | null;
             let reviewProviderName = primaryProviderName;
             let reviewModel = inlineReviewModel;
+            recordFunctionReviewAttempt(reviewLimitState);
+            attemptedFunctionsForFile += 1;
             try {
               const llmResult = await callLlmWithFallback({
                 prompt,
@@ -711,6 +748,26 @@ async function run() {
               continue;
             }
 
+            const inlineLimitSkip =
+              getInlineCommentLimitSkip(reviewLimitState);
+            if (inlineLimitSkip) {
+              recordReviewLimitSkip(reviewLimitState, inlineLimitSkip.reason);
+              logReviewSkip(core, {
+                filePath: file.filename,
+                functionName: target.fn.name,
+                reason: inlineLimitSkip.reason,
+                provider: reviewProviderName,
+                model: reviewModel,
+                language: inlineLanguage,
+                reviewStrictness,
+                securityReviewEnabled,
+                threshold: INLINE_CONFIDENCE_THRESHOLD,
+                limit: inlineLimitSkip.limit,
+                skippedFunctions: 1,
+              });
+              continue;
+            }
+
             const findingRisk = determineRiskLevel(
               [confidence],
               [cleaned.toLowerCase()],
@@ -729,6 +786,7 @@ async function run() {
                 risk: findingRisk,
               })
             );
+            recordAcceptedInlineComment(reviewLimitState);
 
             try {
               await octokit.rest.pulls.createReviewComment({
@@ -797,6 +855,28 @@ async function run() {
         const scopedReviewKey = `${file.filename}:${targetLine}`;
         if (reviewedScopedLines.has(scopedReviewKey)) continue;
         reviewedScopedLines.add(scopedReviewKey);
+
+        const scopedInlineLimitSkip =
+          getInlineCommentLimitSkip(reviewLimitState);
+        if (scopedInlineLimitSkip) {
+          recordReviewLimitSkip(
+            reviewLimitState,
+            scopedInlineLimitSkip.reason
+          );
+          logReviewSkip(core, {
+            filePath: file.filename,
+            reason: scopedInlineLimitSkip.reason,
+            provider: primaryProviderName,
+            model: inlineReviewModel,
+            language: inlineLanguage,
+            reviewStrictness,
+            securityReviewEnabled,
+            threshold: INLINE_CONFIDENCE_THRESHOLD,
+            limit: scopedInlineLimitSkip.limit,
+            skippedFunctions: 1,
+          });
+          continue;
+        }
 
         core.debug(
           `Posting inline comment for ${file.filename} at line ${targetLine}`
@@ -892,6 +972,24 @@ async function run() {
           continue;
         }
 
+        const inlineLimitSkip = getInlineCommentLimitSkip(reviewLimitState);
+        if (inlineLimitSkip) {
+          recordReviewLimitSkip(reviewLimitState, inlineLimitSkip.reason);
+          logReviewSkip(core, {
+            filePath: file.filename,
+            reason: inlineLimitSkip.reason,
+            provider: reviewProviderName,
+            model: reviewModel,
+            language: inlineLanguage,
+            reviewStrictness,
+            securityReviewEnabled,
+            threshold: INLINE_CONFIDENCE_THRESHOLD,
+            limit: inlineLimitSkip.limit,
+            skippedFunctions: 1,
+          });
+          continue;
+        }
+
         const findingRisk = determineRiskLevel(
           [confidence],
           [cleaned.toLowerCase()],
@@ -909,6 +1007,7 @@ async function run() {
             risk: findingRisk,
           })
         );
+        recordAcceptedInlineComment(reviewLimitState);
 
         try {
           await octokit.rest.pulls.createReviewComment({
@@ -956,6 +1055,7 @@ async function run() {
           findings: summaryFindings,
           providerFailures,
           providerFailureBehavior,
+          reviewLimits: reviewLimitState,
         })
       );
 
@@ -1008,6 +1108,7 @@ async function run() {
           findings: summaryFindings,
           providerFailures,
           providerFailureBehavior,
+          reviewLimits: reviewLimitState,
         })
       );
 
@@ -1031,6 +1132,7 @@ async function run() {
         findings: summaryFindings,
         providerFailures,
         providerFailureBehavior,
+        reviewLimits: reviewLimitState,
       })
     );
 

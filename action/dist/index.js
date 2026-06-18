@@ -54,6 +54,7 @@ const fileSourceFetcher_1 = require("./helpers/fileSourceFetcher");
 const modelValidation_1 = require("./helpers/modelValidation");
 const providerFailures_1 = require("./helpers/providerFailures");
 const llmProvider_1 = require("./helpers/llmProvider");
+const reviewLimits_1 = require("./helpers/reviewLimits");
 /* =======================
    Helpers: file filtering
    ======================= */
@@ -282,6 +283,8 @@ async function run() {
         const fallbackOn = config.providers?.fallback_on ?? [];
         const primaryProviderName = config.providers?.primary ?? "huggingface";
         const fallbackProviderName = config.providers?.fallback;
+        const reviewLimits = (0, reviewLimits_1.getReviewLimits)(config);
+        const reviewLimitState = (0, reviewLimits_1.createReviewLimitState)(reviewLimits);
         if (!config.enabled) {
             core.info("AI reviewer disabled via config");
             return;
@@ -421,6 +424,7 @@ async function run() {
                     config,
                 })
                 : undefined;
+            let attemptedFunctionsForFile = 0;
             core.info([
                 "Using provider model:",
                 `file=${file.filename}`,
@@ -468,6 +472,27 @@ async function run() {
             if (!(0, functionReviewTargets_1.shouldUseScopedReviewFallback)(extractedFunctions) &&
                 functionTargets.length > 0) {
                 for (const target of functionTargets) {
+                    const limitSkip = (0, reviewLimits_1.getFunctionReviewLimitSkip)({
+                        state: reviewLimitState,
+                        attemptedFunctionsForFile,
+                    });
+                    if (limitSkip) {
+                        (0, reviewLimits_1.recordReviewLimitSkip)(reviewLimitState, limitSkip.reason);
+                        (0, reviewDiagnostics_1.logReviewSkip)(core, {
+                            filePath: file.filename,
+                            functionName: target.fn.name,
+                            reason: limitSkip.reason,
+                            provider: primaryProviderName,
+                            model: inlineReviewModel,
+                            language: inlineLanguage,
+                            reviewStrictness,
+                            securityReviewEnabled,
+                            threshold: INLINE_CONFIDENCE_THRESHOLD,
+                            limit: limitSkip.limit,
+                            skippedFunctions: 1,
+                        });
+                        continue;
+                    }
                     const reviewContext = (0, functionReviewTargets_1.getFunctionReviewContext)(target.fn, changedLines);
                     core.debug(`Posting inline comment for ${file.filename} at line ${target.commentLine}`);
                     const prompt = (0, reviewPrompt_1.buildChangedFunctionReviewPrompt)({
@@ -480,6 +505,8 @@ async function run() {
                     let raw;
                     let reviewProviderName = primaryProviderName;
                     let reviewModel = inlineReviewModel;
+                    (0, reviewLimits_1.recordFunctionReviewAttempt)(reviewLimitState);
+                    attemptedFunctionsForFile += 1;
                     try {
                         const llmResult = await (0, llmProvider_1.callLlmWithFallback)({
                             prompt,
@@ -556,6 +583,24 @@ async function run() {
                         });
                         continue;
                     }
+                    const inlineLimitSkip = (0, reviewLimits_1.getInlineCommentLimitSkip)(reviewLimitState);
+                    if (inlineLimitSkip) {
+                        (0, reviewLimits_1.recordReviewLimitSkip)(reviewLimitState, inlineLimitSkip.reason);
+                        (0, reviewDiagnostics_1.logReviewSkip)(core, {
+                            filePath: file.filename,
+                            functionName: target.fn.name,
+                            reason: inlineLimitSkip.reason,
+                            provider: reviewProviderName,
+                            model: reviewModel,
+                            language: inlineLanguage,
+                            reviewStrictness,
+                            securityReviewEnabled,
+                            threshold: INLINE_CONFIDENCE_THRESHOLD,
+                            limit: inlineLimitSkip.limit,
+                            skippedFunctions: 1,
+                        });
+                        continue;
+                    }
                     const findingRisk = (0, riskLevel_1.determineRiskLevel)([confidence], [cleaned.toLowerCase()], { securitySensitive: securityReviewEnabled });
                     highestAcceptedFindingRisk = (0, riskLevel_1.getHighestRiskLevel)(highestAcceptedFindingRisk, findingRisk);
                     summaryFindings.push((0, summaryComment_1.createSummaryFinding)({
@@ -564,6 +609,7 @@ async function run() {
                         review: cleaned,
                         risk: findingRisk,
                     }));
+                    (0, reviewLimits_1.recordAcceptedInlineComment)(reviewLimitState);
                     try {
                         await octokit.rest.pulls.createReviewComment({
                             owner,
@@ -625,6 +671,23 @@ async function run() {
             if (reviewedScopedLines.has(scopedReviewKey))
                 continue;
             reviewedScopedLines.add(scopedReviewKey);
+            const scopedInlineLimitSkip = (0, reviewLimits_1.getInlineCommentLimitSkip)(reviewLimitState);
+            if (scopedInlineLimitSkip) {
+                (0, reviewLimits_1.recordReviewLimitSkip)(reviewLimitState, scopedInlineLimitSkip.reason);
+                (0, reviewDiagnostics_1.logReviewSkip)(core, {
+                    filePath: file.filename,
+                    reason: scopedInlineLimitSkip.reason,
+                    provider: primaryProviderName,
+                    model: inlineReviewModel,
+                    language: inlineLanguage,
+                    reviewStrictness,
+                    securityReviewEnabled,
+                    threshold: INLINE_CONFIDENCE_THRESHOLD,
+                    limit: scopedInlineLimitSkip.limit,
+                    skippedFunctions: 1,
+                });
+                continue;
+            }
             core.debug(`Posting inline comment for ${file.filename} at line ${targetLine}`);
             const scopedPatch = (0, extractScopedPatch_1.extractScopedPatch)(patch, targetLine);
             core.debug(`Scoped Patch:\n${scopedPatch}`);
@@ -709,6 +772,23 @@ async function run() {
                 });
                 continue;
             }
+            const inlineLimitSkip = (0, reviewLimits_1.getInlineCommentLimitSkip)(reviewLimitState);
+            if (inlineLimitSkip) {
+                (0, reviewLimits_1.recordReviewLimitSkip)(reviewLimitState, inlineLimitSkip.reason);
+                (0, reviewDiagnostics_1.logReviewSkip)(core, {
+                    filePath: file.filename,
+                    reason: inlineLimitSkip.reason,
+                    provider: reviewProviderName,
+                    model: reviewModel,
+                    language: inlineLanguage,
+                    reviewStrictness,
+                    securityReviewEnabled,
+                    threshold: INLINE_CONFIDENCE_THRESHOLD,
+                    limit: inlineLimitSkip.limit,
+                    skippedFunctions: 1,
+                });
+                continue;
+            }
             const findingRisk = (0, riskLevel_1.determineRiskLevel)([confidence], [cleaned.toLowerCase()], { securitySensitive: securityReviewEnabled });
             highestAcceptedFindingRisk = (0, riskLevel_1.getHighestRiskLevel)(highestAcceptedFindingRisk, findingRisk);
             summaryFindings.push((0, summaryComment_1.createSummaryFinding)({
@@ -716,6 +796,7 @@ async function run() {
                 review: cleaned,
                 risk: findingRisk,
             }));
+            (0, reviewLimits_1.recordAcceptedInlineComment)(reviewLimitState);
             try {
                 await octokit.rest.pulls.createReviewComment({
                     owner,
@@ -753,6 +834,7 @@ async function run() {
                 findings: summaryFindings,
                 providerFailures,
                 providerFailureBehavior,
+                reviewLimits: reviewLimitState,
             }));
             if ((0, providerFailures_1.shouldFailForProviderFailures)(providerFailureBehavior, providerFailures)) {
                 core.setFailed("AI review could not be completed because provider calls failed.");
@@ -772,6 +854,7 @@ async function run() {
                 findings: summaryFindings,
                 providerFailures,
                 providerFailureBehavior,
+                reviewLimits: reviewLimitState,
             }));
             core.setFailed("🚨 AI review detected HIGH-RISK issues. Add 'ai-review: override' to bypass.");
             return;
@@ -784,6 +867,7 @@ async function run() {
             findings: summaryFindings,
             providerFailures,
             providerFailureBehavior,
+            reviewLimits: reviewLimitState,
         }));
         if ((0, providerFailures_1.shouldFailForProviderFailures)(providerFailureBehavior, providerFailures)) {
             core.setFailed("AI review completed with provider failures.");

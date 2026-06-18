@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DEFAULT_CONFIG = exports.DEFAULT_OPENROUTER_MODEL = exports.DEFAULT_PROVIDER_FALLBACK_ON = void 0;
+exports.DEFAULT_CONFIG = exports.DEFAULT_MAX_TOTAL_FUNCTIONS = exports.DEFAULT_MAX_FUNCTIONS_PER_FILE = exports.DEFAULT_MAX_INLINE_COMMENTS = exports.DEFAULT_OPENROUTER_MODEL = exports.DEFAULT_PROVIDER_FALLBACK_ON = void 0;
 exports.mergeReviewerConfig = mergeReviewerConfig;
 exports.normalizeReviewStrictness = normalizeReviewStrictness;
 exports.normalizeModelValidationMode = normalizeModelValidationMode;
@@ -8,6 +8,7 @@ exports.normalizeProviderFailureBehavior = normalizeProviderFailureBehavior;
 exports.normalizeLlmProviderName = normalizeLlmProviderName;
 exports.normalizeOptionalLlmProviderName = normalizeOptionalLlmProviderName;
 exports.normalizeProviderFallbackOn = normalizeProviderFallbackOn;
+exports.normalizePositiveInteger = normalizePositiveInteger;
 exports.getInlineConfidenceThreshold = getInlineConfidenceThreshold;
 exports.DEFAULT_PROVIDER_FALLBACK_ON = [
     "quota_exceeded",
@@ -17,12 +18,18 @@ exports.DEFAULT_PROVIDER_FALLBACK_ON = [
     "network_error",
 ];
 exports.DEFAULT_OPENROUTER_MODEL = "cohere/north-mini-code:free";
+exports.DEFAULT_MAX_INLINE_COMMENTS = 10;
+exports.DEFAULT_MAX_FUNCTIONS_PER_FILE = 5;
+exports.DEFAULT_MAX_TOTAL_FUNCTIONS = 30;
 exports.DEFAULT_CONFIG = {
     enabled: true,
     max_files: 10,
     min_confidence: 45,
     review: {
         strictness: "balanced",
+        max_inline_comments: exports.DEFAULT_MAX_INLINE_COMMENTS,
+        max_functions_per_file: exports.DEFAULT_MAX_FUNCTIONS_PER_FILE,
+        max_total_functions: exports.DEFAULT_MAX_TOTAL_FUNCTIONS,
     },
     model_routing: {
         enabled: false,
@@ -69,6 +76,9 @@ function mergeReviewerConfig(config = {}) {
             ...exports.DEFAULT_CONFIG.review,
             ...(config.review ?? {}),
             strictness,
+            max_inline_comments: normalizePositiveInteger(config.review?.max_inline_comments, exports.DEFAULT_MAX_INLINE_COMMENTS),
+            max_functions_per_file: normalizePositiveInteger(config.review?.max_functions_per_file, exports.DEFAULT_MAX_FUNCTIONS_PER_FILE),
+            max_total_functions: normalizePositiveInteger(config.review?.max_total_functions, exports.DEFAULT_MAX_TOTAL_FUNCTIONS),
         },
         model_routing: {
             ...exports.DEFAULT_CONFIG.model_routing,
@@ -141,6 +151,12 @@ function normalizeProviderFallbackOn(value) {
     }
     const normalized = value.filter(isProviderFailureType);
     return normalized.length > 0 ? normalized : exports.DEFAULT_PROVIDER_FALLBACK_ON;
+}
+function normalizePositiveInteger(value, fallback) {
+    if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+        return fallback;
+    }
+    return value;
 }
 function isProviderFailureType(value) {
     return (value === "quota_exceeded" ||

@@ -2,6 +2,10 @@ import {
   ProviderFailure,
   ProviderFailureType,
 } from "./providerFailures";
+import {
+  hasReviewLimitSkips,
+  ReviewLimitState,
+} from "./reviewLimits";
 
 export const SUMMARY_MARKER = "<!-- ai-code-reviewer-FB:summary -->";
 
@@ -19,6 +23,7 @@ export interface SummaryBodyOptions {
   findings: SummaryFinding[];
   providerFailures?: ProviderFailure[];
   providerFailureBehavior?: "warn" | "fail" | "skip";
+  reviewLimits?: ReviewLimitState;
 }
 
 export function createSummaryFinding({
@@ -45,6 +50,7 @@ export function buildSummaryBody({
   findings,
   providerFailures = [],
   providerFailureBehavior = "warn",
+  reviewLimits,
 }: SummaryBodyOptions): string {
   const dedupedFindings = dedupeFindings(findings);
   const overallRisk =
@@ -67,13 +73,15 @@ ${formatKeyFindings(dedupedFindings, providerFailures)}
 
 ${formatProviderFailures(providerFailures, providerFailureBehavior)}
 
+${formatReviewLimits(reviewLimits)}
+
 ## Risk Analysis
 
-${formatRiskAnalysis(overallRisk, dedupedFindings.length, providerFailures)}
+${formatRiskAnalysis(overallRisk, dedupedFindings.length, providerFailures, reviewLimits)}
 
 ## Suggested Next Steps
 
-${formatNextSteps(overallRisk, dedupedFindings.length, providerFailures)}
+${formatNextSteps(overallRisk, dedupedFindings.length, providerFailures, reviewLimits)}
 `;
 }
 
@@ -137,17 +145,26 @@ function formatKeyFindings(
 function formatRiskAnalysis(
   risk: SummaryRiskLevel,
   findingCount: number,
-  providerFailures: ProviderFailure[]
+  providerFailures: ProviderFailure[],
+  reviewLimits?: ReviewLimitState
 ): string {
   if (risk === "unknown") {
     return "Risk is unknown because AI review could not be completed due to provider failures.";
   }
 
+  const limitNote = hasLimitSkips(reviewLimits)
+    ? " Some changed functions were skipped because review limits were reached, so review coverage was partial."
+    : "";
+
   if (providerFailures.length > 0) {
     return `${formatBaseRiskAnalysis(
       risk,
       findingCount
-    )} Some changed functions were not reviewed because provider calls failed.`;
+    )} Some changed functions were not reviewed because provider calls failed.${limitNote}`;
+  }
+
+  if (limitNote) {
+    return `${formatBaseRiskAnalysis(risk, findingCount)}${limitNote}`;
   }
 
   return formatBaseRiskAnalysis(risk, findingCount);
@@ -175,20 +192,25 @@ function formatBaseRiskAnalysis(
 function formatNextSteps(
   risk: SummaryRiskLevel,
   findingCount: number,
-  providerFailures: ProviderFailure[]
+  providerFailures: ProviderFailure[],
+  reviewLimits?: ReviewLimitState
 ): string {
   if (risk === "unknown") {
     return "* Add Hugging Face prepaid credits, upgrade billing, or configure another provider/model.\n* Rerun the workflow after provider access is restored.";
   }
 
+  const limitStep = hasLimitSkips(reviewLimits)
+    ? "\n* Increase review limits and rerun the workflow if broader AI coverage is needed."
+    : "";
+
   if (providerFailures.length > 0) {
     return `${formatBaseNextSteps(
       risk,
       findingCount
-    )}\n* Resolve provider access issues and rerun the workflow to review skipped functions.`;
+    )}\n* Resolve provider access issues and rerun the workflow to review skipped functions.${limitStep}`;
   }
 
-  return formatBaseNextSteps(risk, findingCount);
+  return `${formatBaseNextSteps(risk, findingCount)}${limitStep}`;
 }
 
 function formatBaseNextSteps(
@@ -241,6 +263,26 @@ ${intro}
 ${dedupeProviderFailures(providerFailures)
   .map((failure) => `* ${formatProviderFailure(failure)}`)
   .join("\n")}`;
+}
+
+function formatReviewLimits(reviewLimits?: ReviewLimitState): string {
+  if (!hasLimitSkips(reviewLimits)) {
+    return "";
+  }
+
+  return `## Review Limits
+
+Some changed functions were skipped because configured review limits were reached.
+
+* Max inline comments: ${reviewLimits.maxInlineComments}
+* Max functions per file: ${reviewLimits.maxFunctionsPerFile}
+* Max total functions: ${reviewLimits.maxTotalFunctions}`;
+}
+
+function hasLimitSkips(
+  reviewLimits?: ReviewLimitState
+): reviewLimits is ReviewLimitState {
+  return Boolean(reviewLimits && hasReviewLimitSkips(reviewLimits));
 }
 
 function formatProviderFailure(failure: ProviderFailure): string {

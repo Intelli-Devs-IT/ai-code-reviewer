@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  DEFAULT_MAX_FUNCTIONS_PER_FILE,
+  DEFAULT_MAX_INLINE_COMMENTS,
+  DEFAULT_MAX_TOTAL_FUNCTIONS,
   DEFAULT_OPENROUTER_MODEL,
   DEFAULT_PROVIDER_FALLBACK_ON,
   DEFAULT_CONFIG,
@@ -16,6 +19,23 @@ test("config defaults security review mode to disabled", () => {
 test("config defaults review strictness to balanced", () => {
   assert.equal(DEFAULT_CONFIG.review?.strictness, "balanced");
   assert.equal(mergeReviewerConfig().review?.strictness, "balanced");
+});
+
+test("config defaults review cost and noise limits", () => {
+  const config = mergeReviewerConfig();
+
+  assert.equal(
+    config.review?.max_inline_comments,
+    DEFAULT_MAX_INLINE_COMMENTS,
+  );
+  assert.equal(
+    config.review?.max_functions_per_file,
+    DEFAULT_MAX_FUNCTIONS_PER_FILE,
+  );
+  assert.equal(
+    config.review?.max_total_functions,
+    DEFAULT_MAX_TOTAL_FUNCTIONS,
+  );
 });
 
 test("config defaults model routing to disabled", () => {
@@ -214,6 +234,43 @@ test("invalid strictness falls back to balanced", () => {
   });
 
   assert.equal(config.review?.strictness, "balanced");
+});
+
+test("config reads review cost and noise limits", () => {
+  const config = mergeReviewerConfig({
+    review: {
+      max_inline_comments: 5,
+      max_functions_per_file: 3,
+      max_total_functions: 12,
+    },
+  });
+
+  assert.equal(config.review?.max_inline_comments, 5);
+  assert.equal(config.review?.max_functions_per_file, 3);
+  assert.equal(config.review?.max_total_functions, 12);
+});
+
+test("invalid review cost and noise limits fall back to defaults", () => {
+  const config = mergeReviewerConfig({
+    review: {
+      max_inline_comments: 0,
+      max_functions_per_file: -1,
+      max_total_functions: 2.5,
+    },
+  });
+
+  assert.equal(
+    config.review?.max_inline_comments,
+    DEFAULT_MAX_INLINE_COMMENTS,
+  );
+  assert.equal(
+    config.review?.max_functions_per_file,
+    DEFAULT_MAX_FUNCTIONS_PER_FILE,
+  );
+  assert.equal(
+    config.review?.max_total_functions,
+    DEFAULT_MAX_TOTAL_FUNCTIONS,
+  );
 });
 
 test("empty config merge falls back to disabled security review mode", () => {

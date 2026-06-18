@@ -23,6 +23,9 @@ export interface ReviewerConfig {
   min_confidence?: number;
   review?: {
     strictness?: ReviewStrictness;
+    max_inline_comments?: number;
+    max_functions_per_file?: number;
+    max_total_functions?: number;
   };
   model_routing?: {
     enabled?: boolean;
@@ -57,6 +60,9 @@ export const DEFAULT_PROVIDER_FALLBACK_ON: ProviderFailureType[] = [
 ];
 
 export const DEFAULT_OPENROUTER_MODEL = "cohere/north-mini-code:free";
+export const DEFAULT_MAX_INLINE_COMMENTS = 10;
+export const DEFAULT_MAX_FUNCTIONS_PER_FILE = 5;
+export const DEFAULT_MAX_TOTAL_FUNCTIONS = 30;
 
 export const DEFAULT_CONFIG: ReviewerConfig = {
   enabled: true,
@@ -64,6 +70,9 @@ export const DEFAULT_CONFIG: ReviewerConfig = {
   min_confidence: 45,
   review: {
     strictness: "balanced",
+    max_inline_comments: DEFAULT_MAX_INLINE_COMMENTS,
+    max_functions_per_file: DEFAULT_MAX_FUNCTIONS_PER_FILE,
+    max_total_functions: DEFAULT_MAX_TOTAL_FUNCTIONS,
   },
   model_routing: {
     enabled: false,
@@ -123,6 +132,18 @@ export function mergeReviewerConfig(
       ...DEFAULT_CONFIG.review,
       ...(config.review ?? {}),
       strictness,
+      max_inline_comments: normalizePositiveInteger(
+        config.review?.max_inline_comments,
+        DEFAULT_MAX_INLINE_COMMENTS,
+      ),
+      max_functions_per_file: normalizePositiveInteger(
+        config.review?.max_functions_per_file,
+        DEFAULT_MAX_FUNCTIONS_PER_FILE,
+      ),
+      max_total_functions: normalizePositiveInteger(
+        config.review?.max_total_functions,
+        DEFAULT_MAX_TOTAL_FUNCTIONS,
+      ),
     },
     model_routing: {
       ...DEFAULT_CONFIG.model_routing,
@@ -219,6 +240,17 @@ export function normalizeProviderFallbackOn(
   const normalized = value.filter(isProviderFailureType);
 
   return normalized.length > 0 ? normalized : DEFAULT_PROVIDER_FALLBACK_ON;
+}
+
+export function normalizePositiveInteger(
+  value: unknown,
+  fallback: number,
+): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    return fallback;
+  }
+
+  return value;
 }
 
 function isProviderFailureType(value: unknown): value is ProviderFailureType {

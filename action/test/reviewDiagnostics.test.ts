@@ -18,6 +18,8 @@ test("skip log includes file function model and review metadata", () => {
     reason: "confidence_below_threshold",
     confidence: 38,
     threshold: 45,
+    limit: 5,
+    skippedFunctions: 3,
   });
 
   assert.match(log, /AI review skipped:/);
@@ -31,6 +33,8 @@ test("skip log includes file function model and review metadata", () => {
   assert.match(log, /reason=confidence_below_threshold/);
   assert.match(log, /confidence=38/);
   assert.match(log, /threshold=45/);
+  assert.match(log, /limit=5/);
+  assert.match(log, /skippedFunctions=3/);
 });
 
 test("skip log redacts token-like secrets from preview", () => {

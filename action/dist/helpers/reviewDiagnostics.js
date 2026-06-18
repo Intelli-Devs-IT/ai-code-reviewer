@@ -37,6 +37,12 @@ function buildReviewSkipLog(params) {
     if (typeof params.threshold === "number") {
         lines.push(`threshold=${params.threshold}`);
     }
+    if (typeof params.limit === "number") {
+        lines.push(`limit=${params.limit}`);
+    }
+    if (typeof params.skippedFunctions === "number") {
+        lines.push(`skippedFunctions=${params.skippedFunctions}`);
+    }
     if (params.preview) {
         lines.push(`preview=${redactSecrets(params.preview).slice(0, 200)}`);
     }

@@ -76,3 +76,17 @@ test("main review calls use provider-aware model resolution", () => {
     /modelRoutingEnabled\s*\?\s*inlineReviewModel\s*:\s*DEFAULT_HUGGINGFACE_MODEL/
   );
 });
+
+test("changed-function review checks function limits before provider calls", () => {
+  assert.match(INDEX_SOURCE, /getFunctionReviewLimitSkip/);
+  assert.match(
+    INDEX_SOURCE,
+    /getFunctionReviewLimitSkip[\s\S]*?callLlmWithFallback/
+  );
+  assert.match(INDEX_SOURCE, /recordFunctionReviewAttempt/);
+});
+
+test("accepted inline findings are counted for inline comment limits", () => {
+  assert.match(INDEX_SOURCE, /recordAcceptedInlineComment/);
+  assert.match(INDEX_SOURCE, /getInlineCommentLimitSkip/);
+});

@@ -23,6 +23,7 @@
 * large function focused-context handling
 * optional security review mode
 * configurable review strictness
+* configurable review cost and noise limits
 * basic model routing configuration
 * configurable model validation for tested, custom, private, and experimental models
 * provider quota/payment failure handling in logs and summary output

@@ -6,6 +6,10 @@ import {
   createSummaryFinding,
   SUMMARY_MARKER,
 } from "../src/helpers/summaryComment";
+import {
+  createReviewLimitState,
+  recordReviewLimitSkip,
+} from "../src/helpers/reviewLimits";
 
 test("summary includes correct files reviewed count", () => {
   const body = buildSummaryBody({
@@ -196,6 +200,32 @@ test("multiple reviewed functions in one file still count as one file", () => {
 
   assert.match(body, /Files Reviewed: 1/);
   assert.match(body, /Inline Findings: 2/);
+});
+
+test("summary mentions review limits when limits are reached", () => {
+  const reviewLimits = createReviewLimitState({
+    maxInlineComments: 5,
+    maxFunctionsPerFile: 5,
+    maxTotalFunctions: 25,
+  });
+  recordReviewLimitSkip(reviewLimits, "max_total_functions_reached", 2);
+
+  const body = buildSummaryBody({
+    reviewedFilePaths: new Set(["src/a.ts"]),
+    findings: [],
+    reviewLimits,
+  });
+
+  assert.match(body, /## Review Limits/);
+  assert.match(
+    body,
+    /Some changed functions were skipped because configured review limits were reached\./
+  );
+  assert.match(body, /\* Max inline comments: 5/);
+  assert.match(body, /\* Max functions per file: 5/);
+  assert.match(body, /\* Max total functions: 25/);
+  assert.match(body, /Overall Risk: Low/);
+  assert.match(body, /review coverage was partial/);
 });
 
 function createFinding(

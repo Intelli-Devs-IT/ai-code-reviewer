@@ -5,6 +5,7 @@ exports.createSummaryFinding = createSummaryFinding;
 exports.buildSummaryBody = buildSummaryBody;
 exports.getHighestRisk = getHighestRisk;
 exports.dedupeFindings = dedupeFindings;
+const reviewLimits_1 = require("./reviewLimits");
 exports.SUMMARY_MARKER = "<!-- ai-code-reviewer-FB:summary -->";
 function createSummaryFinding({ filePath, functionName, review, risk, }) {
     return {
@@ -14,7 +15,7 @@ function createSummaryFinding({ filePath, functionName, review, risk, }) {
         risk,
     };
 }
-function buildSummaryBody({ reviewedFilePaths, findings, providerFailures = [], providerFailureBehavior = "warn", }) {
+function buildSummaryBody({ reviewedFilePaths, findings, providerFailures = [], providerFailureBehavior = "warn", reviewLimits, }) {
     const dedupedFindings = dedupeFindings(findings);
     const overallRisk = reviewedFilePaths.size === 0 && providerFailures.length > 0
         ? "unknown"
@@ -34,13 +35,15 @@ ${formatKeyFindings(dedupedFindings, providerFailures)}
 
 ${formatProviderFailures(providerFailures, providerFailureBehavior)}
 
+${formatReviewLimits(reviewLimits)}
+
 ## Risk Analysis
 
-${formatRiskAnalysis(overallRisk, dedupedFindings.length, providerFailures)}
+${formatRiskAnalysis(overallRisk, dedupedFindings.length, providerFailures, reviewLimits)}
 
 ## Suggested Next Steps
 
-${formatNextSteps(overallRisk, dedupedFindings.length, providerFailures)}
+${formatNextSteps(overallRisk, dedupedFindings.length, providerFailures, reviewLimits)}
 `;
 }
 function getHighestRisk(findings) {
@@ -87,12 +90,18 @@ function formatKeyFindings(findings, providerFailures) {
         .map((finding) => `* \`${finding.filePath}\`: ${finding.issue}`)
         .join("\n");
 }
-function formatRiskAnalysis(risk, findingCount, providerFailures) {
+function formatRiskAnalysis(risk, findingCount, providerFailures, reviewLimits) {
     if (risk === "unknown") {
         return "Risk is unknown because AI review could not be completed due to provider failures.";
     }
+    const limitNote = hasLimitSkips(reviewLimits)
+        ? " Some changed functions were skipped because review limits were reached, so review coverage was partial."
+        : "";
     if (providerFailures.length > 0) {
-        return `${formatBaseRiskAnalysis(risk, findingCount)} Some changed functions were not reviewed because provider calls failed.`;
+        return `${formatBaseRiskAnalysis(risk, findingCount)} Some changed functions were not reviewed because provider calls failed.${limitNote}`;
+    }
+    if (limitNote) {
+        return `${formatBaseRiskAnalysis(risk, findingCount)}${limitNote}`;
     }
     return formatBaseRiskAnalysis(risk, findingCount);
 }
@@ -108,14 +117,17 @@ function formatBaseRiskAnalysis(risk, findingCount) {
     }
     return "Low risk because accepted findings appear limited in scope and no medium or high-risk finding was identified.";
 }
-function formatNextSteps(risk, findingCount, providerFailures) {
+function formatNextSteps(risk, findingCount, providerFailures, reviewLimits) {
     if (risk === "unknown") {
         return "* Add Hugging Face prepaid credits, upgrade billing, or configure another provider/model.\n* Rerun the workflow after provider access is restored.";
     }
+    const limitStep = hasLimitSkips(reviewLimits)
+        ? "\n* Increase review limits and rerun the workflow if broader AI coverage is needed."
+        : "";
     if (providerFailures.length > 0) {
-        return `${formatBaseNextSteps(risk, findingCount)}\n* Resolve provider access issues and rerun the workflow to review skipped functions.`;
+        return `${formatBaseNextSteps(risk, findingCount)}\n* Resolve provider access issues and rerun the workflow to review skipped functions.${limitStep}`;
     }
-    return formatBaseNextSteps(risk, findingCount);
+    return `${formatBaseNextSteps(risk, findingCount)}${limitStep}`;
 }
 function formatBaseNextSteps(risk, findingCount) {
     if (findingCount === 0) {
@@ -150,6 +162,21 @@ ${intro}
 ${dedupeProviderFailures(providerFailures)
         .map((failure) => `* ${formatProviderFailure(failure)}`)
         .join("\n")}`;
+}
+function formatReviewLimits(reviewLimits) {
+    if (!hasLimitSkips(reviewLimits)) {
+        return "";
+    }
+    return `## Review Limits
+
+Some changed functions were skipped because configured review limits were reached.
+
+* Max inline comments: ${reviewLimits.maxInlineComments}
+* Max functions per file: ${reviewLimits.maxFunctionsPerFile}
+* Max total functions: ${reviewLimits.maxTotalFunctions}`;
+}
+function hasLimitSkips(reviewLimits) {
+    return Boolean(reviewLimits && (0, reviewLimits_1.hasReviewLimitSkips)(reviewLimits));
 }
 function formatProviderFailure(failure) {
     const provider = formatProviderName(failure.provider);
