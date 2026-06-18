@@ -3,7 +3,8 @@ import type { ProviderFailureType } from "./helpers/providerFailures";
 export type ReviewStrictness = "lenient" | "balanced" | "strict";
 export type ModelValidationMode = "strict" | "warn" | "off";
 export type ProviderFailureBehavior = "warn" | "fail" | "skip";
-export type PrimaryLlmProviderName = "huggingface";
+export type PrimaryLlmProviderName = "openrouter";
+// export type PrimaryLlmProviderName = "huggingface"
 export type FallbackLlmProviderName = "openrouter";
 export type ModelRoutingLanguage =
   | "typescript"
@@ -55,8 +56,7 @@ export const DEFAULT_PROVIDER_FALLBACK_ON: ProviderFailureType[] = [
   "network_error",
 ];
 
-export const DEFAULT_OPENROUTER_MODEL =
-  "qwen/qwen-2.5-coder-32b-instruct";
+export const DEFAULT_OPENROUTER_MODEL = "openrouter/free";
 
 export const DEFAULT_CONFIG: ReviewerConfig = {
   enabled: true,
@@ -76,7 +76,7 @@ export const DEFAULT_CONFIG: ReviewerConfig = {
     behavior: "warn",
   },
   providers: {
-    primary: "huggingface",
+    primary: "openrouter",
     fallback_on: DEFAULT_PROVIDER_FALLBACK_ON,
   },
   openrouter: {
@@ -99,21 +99,21 @@ export const DEFAULT_CONFIG: ReviewerConfig = {
 };
 
 export function mergeReviewerConfig(
-  config: Partial<ReviewerConfig> = {}
+  config: Partial<ReviewerConfig> = {},
 ): ReviewerConfig {
   const strictness = normalizeReviewStrictness(config.review?.strictness);
   const modelValidationMode = normalizeModelValidationMode(
-    config.model_validation?.mode
+    config.model_validation?.mode,
   );
   const providerFailureBehavior = normalizeProviderFailureBehavior(
-    config.provider_failures?.behavior
+    config.provider_failures?.behavior,
   );
   const primaryProvider = normalizeLlmProviderName(
     config.providers?.primary,
-    "huggingface"
+    "openrouter",
   );
   const fallbackProvider = normalizeOptionalLlmProviderName(
-    config.providers?.fallback
+    config.providers?.fallback,
   );
 
   return {
@@ -169,7 +169,7 @@ export function normalizeReviewStrictness(value: unknown): ReviewStrictness {
 }
 
 export function normalizeModelValidationMode(
-  value: unknown
+  value: unknown,
 ): ModelValidationMode {
   if (value === "strict" || value === "warn" || value === "off") {
     return value;
@@ -179,7 +179,7 @@ export function normalizeModelValidationMode(
 }
 
 export function normalizeProviderFailureBehavior(
-  value: unknown
+  value: unknown,
 ): ProviderFailureBehavior {
   if (value === "warn" || value === "fail" || value === "skip") {
     return value;
@@ -190,9 +190,9 @@ export function normalizeProviderFailureBehavior(
 
 export function normalizeLlmProviderName(
   value: unknown,
-  fallback: PrimaryLlmProviderName
+  fallback: PrimaryLlmProviderName,
 ): PrimaryLlmProviderName {
-  if (value === "huggingface") {
+  if (value === "openrouter") {
     return value;
   }
 
@@ -200,7 +200,7 @@ export function normalizeLlmProviderName(
 }
 
 export function normalizeOptionalLlmProviderName(
-  value: unknown
+  value: unknown,
 ): FallbackLlmProviderName | undefined {
   if (value === "openrouter") {
     return value;
@@ -210,7 +210,7 @@ export function normalizeOptionalLlmProviderName(
 }
 
 export function normalizeProviderFallbackOn(
-  value: unknown
+  value: unknown,
 ): ProviderFailureType[] {
   if (!Array.isArray(value)) {
     return DEFAULT_PROVIDER_FALLBACK_ON;
@@ -234,7 +234,7 @@ function isProviderFailureType(value: unknown): value is ProviderFailureType {
 }
 
 export function getInlineConfidenceThreshold(
-  strictness: ReviewStrictness
+  strictness: ReviewStrictness,
 ): number {
   switch (strictness) {
     case "lenient":

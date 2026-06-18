@@ -16,7 +16,7 @@ exports.DEFAULT_PROVIDER_FALLBACK_ON = [
     "invalid_response",
     "network_error",
 ];
-exports.DEFAULT_OPENROUTER_MODEL = "qwen/qwen-2.5-coder-32b-instruct";
+exports.DEFAULT_OPENROUTER_MODEL = "openrouter/free";
 exports.DEFAULT_CONFIG = {
     enabled: true,
     max_files: 10,
@@ -35,7 +35,7 @@ exports.DEFAULT_CONFIG = {
         behavior: "warn",
     },
     providers: {
-        primary: "huggingface",
+        primary: "openrouter",
         fallback_on: exports.DEFAULT_PROVIDER_FALLBACK_ON,
     },
     openrouter: {
@@ -60,7 +60,7 @@ function mergeReviewerConfig(config = {}) {
     const strictness = normalizeReviewStrictness(config.review?.strictness);
     const modelValidationMode = normalizeModelValidationMode(config.model_validation?.mode);
     const providerFailureBehavior = normalizeProviderFailureBehavior(config.provider_failures?.behavior);
-    const primaryProvider = normalizeLlmProviderName(config.providers?.primary, "huggingface");
+    const primaryProvider = normalizeLlmProviderName(config.providers?.primary, "openrouter");
     const fallbackProvider = normalizeOptionalLlmProviderName(config.providers?.fallback);
     return {
         ...exports.DEFAULT_CONFIG,
@@ -124,7 +124,7 @@ function normalizeProviderFailureBehavior(value) {
     return "warn";
 }
 function normalizeLlmProviderName(value, fallback) {
-    if (value === "huggingface") {
+    if (value === "openrouter") {
         return value;
     }
     return fallback;
