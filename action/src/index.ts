@@ -37,6 +37,7 @@ import {
   resolveModelForFile,
 } from "./helpers/modelRouting";
 import { logReviewSkip } from "./helpers/reviewDiagnostics";
+import { FileSourceFetcher } from "./helpers/fileSourceFetcher";
 
 /* =======================
    Helpers: file filtering
@@ -295,36 +296,6 @@ async function upsertSummaryComment(
   }
 }
 
-async function getFileSourceFromRef(
-  octokit: any,
-  owner: string,
-  repo: string,
-  path: string,
-  ref: string
-): Promise<string | null> {
-  try {
-    const { data } = await octokit.rest.repos.getContent({
-      owner,
-      repo,
-      path,
-      ref,
-    });
-
-    if (Array.isArray(data) || !("content" in data)) {
-      return null;
-    }
-
-    if (data.encoding !== "base64") {
-      return null;
-    }
-
-    return Buffer.from(data.content, "base64").toString("utf8");
-  } catch (error) {
-    core.warning(`Failed to fetch full source for ${path}: ${error}`);
-    return null;
-  }
-}
-
 /* =======================
    Main Action
    ======================= */
@@ -346,6 +317,7 @@ async function run() {
     if (!token) throw new Error("GITHUB_TOKEN is missing");
 
     const octokit = github.getOctokit(token);
+    const fileSourceFetcher = new FileSourceFetcher(core);
 
     /* =======================
        Load configuration
@@ -513,13 +485,13 @@ async function run() {
           continue;
         }
 
-        const sourceCode = await getFileSourceFromRef(
-          octokit,
+        const sourceCode = await fileSourceFetcher.fetchFileSourceFromHead({
+          github: octokit,
           owner,
           repo,
-          file.filename,
-          commitSha
-        );
+          filePath: file.filename,
+          headSha: commitSha,
+        });
 
         if (sourceCode === null) {
           logReviewSkip(core, {
@@ -531,13 +503,12 @@ async function run() {
             securityReviewEnabled,
             threshold: INLINE_CONFIDENCE_THRESHOLD,
           });
-          continue;
         }
 
-        const extractedFunctions = extractFunctionsFromSource(
-          sourceCode,
-          file.filename
-        );
+        const extractedFunctions =
+          sourceCode === null
+            ? []
+            : extractFunctionsFromSource(sourceCode, file.filename);
         const functionTargets = getFunctionReviewTargets(
           file.filename,
           extractedFunctions,

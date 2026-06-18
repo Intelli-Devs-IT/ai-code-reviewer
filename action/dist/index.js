@@ -49,6 +49,7 @@ const riskLevel_1 = require("./helpers/riskLevel");
 const reviewPrompt_1 = require("./helpers/reviewPrompt");
 const modelRouting_1 = require("./helpers/modelRouting");
 const reviewDiagnostics_1 = require("./helpers/reviewDiagnostics");
+const fileSourceFetcher_1 = require("./helpers/fileSourceFetcher");
 /* =======================
    Helpers: file filtering
    ======================= */
@@ -233,27 +234,6 @@ async function upsertSummaryComment(octokit, owner, repo, issueNumber, body) {
         core.info("Created AI review summary comment");
     }
 }
-async function getFileSourceFromRef(octokit, owner, repo, path, ref) {
-    try {
-        const { data } = await octokit.rest.repos.getContent({
-            owner,
-            repo,
-            path,
-            ref,
-        });
-        if (Array.isArray(data) || !("content" in data)) {
-            return null;
-        }
-        if (data.encoding !== "base64") {
-            return null;
-        }
-        return Buffer.from(data.content, "base64").toString("utf8");
-    }
-    catch (error) {
-        core.warning(`Failed to fetch full source for ${path}: ${error}`);
-        return null;
-    }
-}
 /* =======================
    Main Action
    ======================= */
@@ -271,6 +251,7 @@ async function run() {
         if (!token)
             throw new Error("GITHUB_TOKEN is missing");
         const octokit = github.getOctokit(token);
+        const fileSourceFetcher = new fileSourceFetcher_1.FileSourceFetcher(core);
         /* =======================
            Load configuration
            ======================= */
@@ -401,7 +382,13 @@ async function run() {
                 });
                 continue;
             }
-            const sourceCode = await getFileSourceFromRef(octokit, owner, repo, file.filename, commitSha);
+            const sourceCode = await fileSourceFetcher.fetchFileSourceFromHead({
+                github: octokit,
+                owner,
+                repo,
+                filePath: file.filename,
+                headSha: commitSha,
+            });
             if (sourceCode === null) {
                 (0, reviewDiagnostics_1.logReviewSkip)(core, {
                     filePath: file.filename,
@@ -412,9 +399,10 @@ async function run() {
                     securityReviewEnabled,
                     threshold: INLINE_CONFIDENCE_THRESHOLD,
                 });
-                continue;
             }
-            const extractedFunctions = (0, ast_function_extractor_1.extractFunctionsFromSource)(sourceCode, file.filename);
+            const extractedFunctions = sourceCode === null
+                ? []
+                : (0, ast_function_extractor_1.extractFunctionsFromSource)(sourceCode, file.filename);
             const functionTargets = (0, functionReviewTargets_1.getFunctionReviewTargets)(file.filename, extractedFunctions, changedLines, reviewedFunctionKeys);
             if (!(0, functionReviewTargets_1.shouldUseScopedReviewFallback)(extractedFunctions) &&
                 functionTargets.length > 0) {

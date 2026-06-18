@@ -26,3 +26,10 @@ test("risk label application has one run-level call site", () => {
   assert.equal(labelMatches?.length, 1);
   assert.ok(labelIndex > noReviewedFilesIndex);
 });
+
+test("source unavailable falls through to scoped review fallback", () => {
+  assert.match(
+    INDEX_SOURCE,
+    /sourceCode === null\s*\?\s*\[\]\s*:\s*extractFunctionsFromSource/
+  );
+});

@@ -57,6 +57,7 @@ Block Merge if High Risk
 * The GitHub Action entrypoint is `action/src/index.ts`.
 * The compiled action entrypoint is `action/dist/index.js`.
 * Config loading lives in `action/src/load-config.ts`.
+* Full file source fetching lives in `action/src/helpers/fileSourceFetcher.ts` and uses cached Git tree/blob API calls for PR head content.
 * Inline review prompt formatting lives in `action/src/helpers/reviewPrompt.ts`.
 * Model routing lives in `action/src/helpers/modelRouting.ts`.
 * Inline review skip diagnostics live in `action/src/helpers/reviewDiagnostics.ts`.

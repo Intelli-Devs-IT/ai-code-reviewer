@@ -8,7 +8,7 @@ This file describes what the project currently does. Treat the codebase as the f
 * Changed files are fetched.
 * File patches are available.
 * Changed lines are extracted.
-* Full file source can be fetched from PR head SHA.
+* Full file source is fetched from the PR head SHA using Git tree/blob APIs.
 * AST function extractor can extract TypeScript/JavaScript functions.
 * Changed lines can be mapped to changed functions.
 * Each reviewable file is processed once per run.
