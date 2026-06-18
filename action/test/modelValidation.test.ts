@@ -184,6 +184,22 @@ test("model_routing.routes values are validated", () => {
   ]);
 });
 
+test("OpenRouter model is not validated against Hugging Face tested models", () => {
+  const config = mergeReviewerConfig({
+    model_validation: {
+      mode: "strict",
+    },
+    providers: {
+      fallback: "openrouter",
+    },
+    openrouter: {
+      default_model: "qwen/qwen-2.5-coder-32b-instruct",
+    },
+  });
+
+  assert.doesNotThrow(() => validateConfiguredModels(config));
+});
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

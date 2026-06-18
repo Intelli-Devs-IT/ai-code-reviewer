@@ -1,6 +1,10 @@
+import type { ProviderFailureType } from "./helpers/providerFailures";
+
 export type ReviewStrictness = "lenient" | "balanced" | "strict";
 export type ModelValidationMode = "strict" | "warn" | "off";
 export type ProviderFailureBehavior = "warn" | "fail" | "skip";
+export type PrimaryLlmProviderName = "huggingface";
+export type FallbackLlmProviderName = "openrouter";
 export type ModelRoutingLanguage =
   | "typescript"
   | "javascript"
@@ -30,10 +34,29 @@ export interface ReviewerConfig {
   provider_failures?: {
     behavior?: ProviderFailureBehavior;
   };
+  providers?: {
+    primary?: PrimaryLlmProviderName;
+    fallback?: FallbackLlmProviderName;
+    fallback_on?: ProviderFailureType[];
+  };
+  openrouter?: {
+    default_model?: string;
+  };
   security_review?: {
     enabled?: boolean;
   };
 }
+
+export const DEFAULT_PROVIDER_FALLBACK_ON: ProviderFailureType[] = [
+  "quota_exceeded",
+  "rate_limited",
+  "model_unavailable",
+  "invalid_response",
+  "network_error",
+];
+
+export const DEFAULT_OPENROUTER_MODEL =
+  "qwen/qwen-2.5-coder-32b-instruct";
 
 export const DEFAULT_CONFIG: ReviewerConfig = {
   enabled: true,
@@ -51,6 +74,13 @@ export const DEFAULT_CONFIG: ReviewerConfig = {
   },
   provider_failures: {
     behavior: "warn",
+  },
+  providers: {
+    primary: "huggingface",
+    fallback_on: DEFAULT_PROVIDER_FALLBACK_ON,
+  },
+  openrouter: {
+    default_model: DEFAULT_OPENROUTER_MODEL,
   },
   security_review: {
     enabled: false,
@@ -78,6 +108,13 @@ export function mergeReviewerConfig(
   const providerFailureBehavior = normalizeProviderFailureBehavior(
     config.provider_failures?.behavior
   );
+  const primaryProvider = normalizeLlmProviderName(
+    config.providers?.primary,
+    "huggingface"
+  );
+  const fallbackProvider = normalizeOptionalLlmProviderName(
+    config.providers?.fallback
+  );
 
   return {
     ...DEFAULT_CONFIG,
@@ -104,6 +141,17 @@ export function mergeReviewerConfig(
       ...DEFAULT_CONFIG.provider_failures,
       ...(config.provider_failures ?? {}),
       behavior: providerFailureBehavior,
+    },
+    providers: {
+      ...DEFAULT_CONFIG.providers,
+      ...(config.providers ?? {}),
+      primary: primaryProvider,
+      fallback: fallbackProvider,
+      fallback_on: normalizeProviderFallbackOn(config.providers?.fallback_on),
+    },
+    openrouter: {
+      ...DEFAULT_CONFIG.openrouter,
+      ...(config.openrouter ?? {}),
     },
     security_review: {
       ...DEFAULT_CONFIG.security_review,
@@ -138,6 +186,51 @@ export function normalizeProviderFailureBehavior(
   }
 
   return "warn";
+}
+
+export function normalizeLlmProviderName(
+  value: unknown,
+  fallback: PrimaryLlmProviderName
+): PrimaryLlmProviderName {
+  if (value === "huggingface") {
+    return value;
+  }
+
+  return fallback;
+}
+
+export function normalizeOptionalLlmProviderName(
+  value: unknown
+): FallbackLlmProviderName | undefined {
+  if (value === "openrouter") {
+    return value;
+  }
+
+  return undefined;
+}
+
+export function normalizeProviderFallbackOn(
+  value: unknown
+): ProviderFailureType[] {
+  if (!Array.isArray(value)) {
+    return DEFAULT_PROVIDER_FALLBACK_ON;
+  }
+
+  const normalized = value.filter(isProviderFailureType);
+
+  return normalized.length > 0 ? normalized : DEFAULT_PROVIDER_FALLBACK_ON;
+}
+
+function isProviderFailureType(value: unknown): value is ProviderFailureType {
+  return (
+    value === "quota_exceeded" ||
+    value === "rate_limited" ||
+    value === "auth_failed" ||
+    value === "model_unavailable" ||
+    value === "invalid_response" ||
+    value === "network_error" ||
+    value === "unknown"
+  );
 }
 
 export function getInlineConfidenceThreshold(

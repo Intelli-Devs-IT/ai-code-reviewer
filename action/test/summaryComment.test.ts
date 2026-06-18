@@ -119,6 +119,7 @@ test("all quota-failed provider calls produce unknown-risk summary", () => {
       {
         filePath: "src/a.ts",
         functionName: "loadUser",
+        provider: "huggingface",
         model: "Qwen/Qwen2.5-Coder-32B-Instruct:nscale",
         type: "quota_exceeded",
         message: "402 Payment Required",
@@ -147,6 +148,7 @@ test("mixed success and provider failure summary mentions partial review", () =>
     providerFailures: [
       {
         filePath: "src/b.ts",
+        provider: "huggingface",
         model: "Qwen/Qwen2.5-Coder-32B-Instruct:nscale",
         type: "quota_exceeded",
         message: "402 Payment Required",
@@ -169,6 +171,7 @@ test("skip behavior keeps provider failure summary concise", () => {
     providerFailures: [
       {
         filePath: "src/b.ts",
+        provider: "openrouter",
         model: "custom/model",
         type: "network_error",
         message: "fetch failed",

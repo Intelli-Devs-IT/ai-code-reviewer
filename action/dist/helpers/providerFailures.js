@@ -14,7 +14,7 @@ function classifyProviderError(error) {
         message.includes("payment required")) {
         return "quota_exceeded";
     }
-    if (status === 429 || message.includes("rate limit")) {
+    if (status === 408 || status === 429 || message.includes("rate limit")) {
         return "rate_limited";
     }
     if (status === 401 || status === 403 || message.includes("unauthorized")) {
@@ -30,7 +30,10 @@ function classifyProviderError(error) {
     if (error instanceof modelResponseValidation_1.InvalidModelResponseError) {
         return "invalid_response";
     }
-    if (message.includes("network") ||
+    if (status === 500 ||
+        status === 502 ||
+        status === 504 ||
+        message.includes("network") ||
         message.includes("fetch failed") ||
         message.includes("econnreset") ||
         message.includes("etimedout")) {
@@ -42,6 +45,7 @@ function createProviderFailure(params) {
     return {
         filePath: params.filePath,
         functionName: params.functionName,
+        provider: params.provider,
         model: params.model,
         type: classifyProviderError(params.error),
         message: (0, modelResponseValidation_1.getSafeProviderErrorMessage)(params.error),
@@ -56,6 +60,8 @@ function formatProviderFailureForLog(failure) {
         lines.push(`file=${failure.filePath}`);
     if (failure.functionName)
         lines.push(`function=${failure.functionName}`);
+    if (failure.provider)
+        lines.push(`provider=${failure.provider}`);
     if (failure.model)
         lines.push(`model=${failure.model}`);
     if (failure.message)

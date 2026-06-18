@@ -1,10 +1,14 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
-import { getInlineConfidenceThreshold } from "./config";
+import {
+  DEFAULT_OPENROUTER_MODEL,
+  getInlineConfidenceThreshold,
+} from "./config";
 import {
   DEFAULT_HUGGINGFACE_MODEL,
   HuggingFaceLLM,
 } from "./llm.huggingface";
+import { OpenRouterProvider } from "./llm.openrouter";
 import { loadConfig, fileMatchesConfig } from "./load-config";
 import { findFunctionStartLine } from "./helpers/findFunctionStartLine";
 import { extractScopedPatch } from "./helpers/extractScopedPatch";
@@ -45,6 +49,10 @@ import {
   ProviderFailure,
   shouldFailForProviderFailures,
 } from "./helpers/providerFailures";
+import {
+  callLlmWithFallback,
+  LlmProviderCallError,
+} from "./helpers/llmProvider";
 
 /* =======================
    Helpers: file filtering
@@ -338,6 +346,9 @@ async function run() {
     const modelRoutingEnabled = config.model_routing?.enabled === true;
     const providerFailureBehavior =
       config.provider_failures?.behavior ?? "warn";
+    const fallbackOn = config.providers?.fallback_on ?? [];
+    const openRouterModel =
+      config.openrouter?.default_model ?? DEFAULT_OPENROUTER_MODEL;
 
     if (!config.enabled) {
       core.info("AI reviewer disabled via config");
@@ -352,6 +363,21 @@ async function run() {
 
     const hfKey = process.env.HF_API_KEY;
     const llm = hfKey ? new HuggingFaceLLM(hfKey, core) : null;
+    const openRouterKey = process.env.OPENROUTER_API_KEY;
+    const fallbackProvider =
+      config.providers?.fallback === "openrouter" && openRouterKey
+        ? new OpenRouterProvider(
+            openRouterKey,
+            fetch,
+            `${process.env.GITHUB_SERVER_URL ?? "https://github.com"}/${owner}/${repo}`
+          )
+        : undefined;
+
+    if (config.providers?.fallback === "openrouter" && !openRouterKey) {
+      core.warning(
+        "OpenRouter fallback is configured but OPENROUTER_API_KEY is not set."
+      );
+    }
 
     if (!llm) {
       core.warning("HF_API_KEY not set. AI reviews disabled.");
@@ -552,18 +578,33 @@ async function run() {
             });
 
             let raw: string | null;
+            const primaryModel = modelRoutingEnabled
+              ? inlineReviewModel
+              : DEFAULT_HUGGINGFACE_MODEL;
             try {
-              raw = await llm.reviewDiff(
+              const llmResult = await callLlmWithFallback({
                 prompt,
-                modelRoutingEnabled ? inlineReviewModel : undefined
-              );
-            } catch (error) {
-              const providerFailure = createProviderFailure({
-                error,
+                primaryProvider: llm,
+                fallbackProvider,
+                primaryModel,
+                fallbackModel: openRouterModel,
+                fallbackOn,
                 filePath: file.filename,
                 functionName: target.fn.name,
-                model: inlineReviewModel,
+                logger: core,
               });
+              raw = llmResult.text;
+            } catch (error) {
+              const providerFailure =
+                error instanceof LlmProviderCallError
+                  ? error.failure
+                  : createProviderFailure({
+                      error,
+                      filePath: file.filename,
+                      functionName: target.fn.name,
+                      provider: "huggingface",
+                      model: primaryModel,
+                    });
               providerFailures.push(providerFailure);
               logReviewSkip(core, {
                 filePath: file.filename,
@@ -716,17 +757,31 @@ async function run() {
         });
 
         let raw: string | null;
+        const primaryModel = modelRoutingEnabled
+          ? inlineReviewModel
+          : DEFAULT_HUGGINGFACE_MODEL;
         try {
-          raw = await llm.reviewDiff(
+          const llmResult = await callLlmWithFallback({
             prompt,
-            modelRoutingEnabled ? inlineReviewModel : undefined
-          );
-        } catch (error) {
-          const providerFailure = createProviderFailure({
-            error,
+            primaryProvider: llm,
+            fallbackProvider,
+            primaryModel,
+            fallbackModel: openRouterModel,
+            fallbackOn,
             filePath: file.filename,
-            model: inlineReviewModel,
+            logger: core,
           });
+          raw = llmResult.text;
+        } catch (error) {
+          const providerFailure =
+            error instanceof LlmProviderCallError
+              ? error.failure
+              : createProviderFailure({
+                  error,
+                  filePath: file.filename,
+                  provider: "huggingface",
+                  model: primaryModel,
+                });
           providerFailures.push(providerFailure);
           logReviewSkip(core, {
             filePath: file.filename,

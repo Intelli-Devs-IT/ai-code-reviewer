@@ -13,6 +13,7 @@ Object.defineProperty(exports, "TESTED_HUGGINGFACE_MODELS", { enumerable: true, 
 const baseurl = "https://router.huggingface.co/v1";
 class HuggingFaceLLM {
     constructor(apiKey, logger) {
+        this.name = "huggingface";
         this.apiKey = apiKey;
         this.logger = logger;
         // this.model = "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B:novita";
@@ -78,6 +79,14 @@ class HuggingFaceLLM {
         // } catch {
         //   return null;
         // }
+    }
+    async review(params) {
+        const text = await this.reviewDiff(params.prompt, params.model);
+        return (0, modelResponseValidation_1.assertValidModelResponseText)({
+            text: text ?? "",
+            model: params.model,
+            provider: "Hugging Face",
+        });
     }
 }
 exports.HuggingFaceLLM = HuggingFaceLLM;

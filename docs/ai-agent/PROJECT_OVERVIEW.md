@@ -51,6 +51,8 @@ Model validation can be configured with `model_validation.mode`. It defaults to 
 
 Provider failure handling can be configured with `provider_failures.behavior`. It defaults to `warn`, which continues the workflow and includes provider failures in the summary. Use `fail` to fail the workflow when provider calls fail, or `skip` to keep failure details concise while avoiding misleading review summaries.
 
+Hugging Face remains the default primary LLM provider. OpenRouter can be configured as an optional fallback provider with `providers.fallback: openrouter` and `OPENROUTER_API_KEY`.
+
 Example `.ai-reviewer.yml`:
 
 ```yaml
@@ -84,4 +86,17 @@ model_validation:
 
 provider_failures:
   behavior: warn
+
+providers:
+  primary: huggingface
+  fallback: openrouter
+  fallback_on:
+    - quota_exceeded
+    - rate_limited
+    - model_unavailable
+    - invalid_response
+    - network_error
+
+openrouter:
+  default_model: qwen/qwen-2.5-coder-32b-instruct
 ```

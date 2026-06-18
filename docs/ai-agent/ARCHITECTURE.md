@@ -12,16 +12,17 @@
 8. LLM review generation
 9. Provider response validation
 10. Provider failure classification
-11. Configurable inline prompt modes
-12. Optional model routing by file language
-13. Configurable model validation
-14. Model output cleanup
-15. Confidence scoring
-16. Inline comment posting
-17. Summary comment creation/update
-18. Risk classification
-19. Risk label handling
-20. Merge blocking
+11. Optional provider fallback
+12. Configurable inline prompt modes
+13. Optional model routing by file language
+14. Configurable model validation
+15. Model output cleanup
+16. Confidence scoring
+17. Inline comment posting
+18. Summary comment creation/update
+19. Risk classification
+20. Risk label handling
+21. Merge blocking
 
 ## Architecture Diagram
 
@@ -46,6 +47,8 @@ Review Each Changed Function Once
 Validate Provider Response
 ↓
 Classify Provider Failures
+↓
+Fallback To OpenRouter If Configured
 ↓
 Clean + Normalize LLM Output
 ↓
@@ -92,6 +95,8 @@ Merge Blocking
 * Inline review prompt formatting lives in `action/src/helpers/reviewPrompt.ts`.
 * Provider response validation lives in `action/src/helpers/modelResponseValidation.ts`.
 * Provider failure classification lives in `action/src/helpers/providerFailures.ts`.
+* Provider fallback orchestration lives in `action/src/helpers/llmProvider.ts`.
+* OpenRouter fallback provider code lives in `action/src/llm.openrouter.ts`.
 * Model routing lives in `action/src/helpers/modelRouting.ts`.
 * Model validation lives in `action/src/helpers/modelValidation.ts`.
 * Inline review skip diagnostics live in `action/src/helpers/reviewDiagnostics.ts`.
@@ -114,6 +119,7 @@ Merge Blocking
 * Model validation defaults to warning on untested configured models; strict mode can require tested models only, and off mode supports advanced custom/private model usage.
 * Provider responses must be validated before model text enters cleanup, confidence scoring, comments, or summary findings.
 * Provider quota, payment, rate-limit, auth, model availability, and network failures should be reflected honestly in logs and summaries.
+* Hugging Face is the default primary provider; OpenRouter is optional fallback when configured and `OPENROUTER_API_KEY` is available.
 * Inline comments should be attached to changed lines whenever possible.
 * If a function start line is not commentable, use a changed line inside that function.
 * If AST extraction fails or returns no functions, the old scoped diff fallback can be used.

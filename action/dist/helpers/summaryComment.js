@@ -152,10 +152,18 @@ ${dedupeProviderFailures(providerFailures)
         .join("\n")}`;
 }
 function formatProviderFailure(failure) {
+    const provider = formatProviderName(failure.provider);
     const type = formatProviderFailureType(failure.type);
     const model = failure.model ? ` for model ${failure.model}` : "";
     const location = failure.filePath ? ` in \`${failure.filePath}\`` : "";
-    return `Hugging Face ${type}${model}${location}.`;
+    return `${provider} ${type}${model}${location}.`;
+}
+function formatProviderName(provider) {
+    if (provider === "openrouter")
+        return "OpenRouter";
+    if (provider === "huggingface")
+        return "Hugging Face";
+    return "Provider";
 }
 function formatProviderFailureType(type) {
     switch (type) {

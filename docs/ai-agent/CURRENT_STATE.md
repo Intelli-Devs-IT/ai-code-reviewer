@@ -21,6 +21,7 @@ This file describes what the project currently does. Treat the codebase as the f
 * Model validation supports `strict`, `warn`, and `off` modes; `warn` is the default and allows untested custom/private models with warnings.
 * Provider responses are validated so empty responses, raw HTML, and obvious provider errors are skipped before review cleanup and scoring.
 * Provider quota/payment failures are classified and shown in the summary so failed provider calls are not presented as successful low-risk reviews.
+* OpenRouter can be configured as an optional fallback provider when Hugging Face fails with configured fallback-eligible provider failures.
 * Inline comments are posted near the correct function area.
 * Unchanged functions are ignored by the AST-based inline review path.
 * Summary comment is created or updated.

@@ -30,6 +30,26 @@ test("Payment Required message is classified as quota_exceeded", () => {
   );
 });
 
+test("OpenRouter auth statuses are classified as auth_failed", () => {
+  assert.equal(classifyProviderError({ status: 401 }), "auth_failed");
+  assert.equal(classifyProviderError({ status: 403 }), "auth_failed");
+});
+
+test("OpenRouter rate limit statuses are classified as rate_limited", () => {
+  assert.equal(classifyProviderError({ status: 408 }), "rate_limited");
+  assert.equal(classifyProviderError({ status: 429 }), "rate_limited");
+});
+
+test("OpenRouter missing model status is classified as model_unavailable", () => {
+  assert.equal(classifyProviderError({ status: 404 }), "model_unavailable");
+});
+
+test("OpenRouter server errors are classified as network_error", () => {
+  assert.equal(classifyProviderError({ status: 500 }), "network_error");
+  assert.equal(classifyProviderError({ status: 502 }), "network_error");
+  assert.equal(classifyProviderError({ status: 504 }), "network_error");
+});
+
 test("provider failure logs do not include secrets", () => {
   const failure = createProviderFailure({
     error: new Error("Authorization: Bearer hf_secret_token and sk-secret123"),

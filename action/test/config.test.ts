@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  DEFAULT_OPENROUTER_MODEL,
+  DEFAULT_PROVIDER_FALLBACK_ON,
   DEFAULT_CONFIG,
   getInlineConfidenceThreshold,
   mergeReviewerConfig,
@@ -29,6 +31,21 @@ test("config defaults model validation mode to warn", () => {
 test("config defaults provider failure behavior to warn", () => {
   assert.equal(DEFAULT_CONFIG.provider_failures?.behavior, "warn");
   assert.equal(mergeReviewerConfig().provider_failures?.behavior, "warn");
+});
+
+test("config defaults providers to huggingface without fallback", () => {
+  const config = mergeReviewerConfig();
+
+  assert.equal(config.providers?.primary, "huggingface");
+  assert.equal(config.providers?.fallback, undefined);
+  assert.deepEqual(config.providers?.fallback_on, DEFAULT_PROVIDER_FALLBACK_ON);
+});
+
+test("config defaults OpenRouter model", () => {
+  assert.equal(
+    mergeReviewerConfig().openrouter?.default_model,
+    DEFAULT_OPENROUTER_MODEL
+  );
 });
 
 test("config reads model validation modes", () => {
@@ -67,6 +84,24 @@ test("config reads provider failure behaviors", () => {
     }).provider_failures?.behavior,
     "skip"
   );
+});
+
+test("config reads provider fallback settings", () => {
+  const config = mergeReviewerConfig({
+    providers: {
+      primary: "huggingface",
+      fallback: "openrouter",
+      fallback_on: ["quota_exceeded"],
+    },
+    openrouter: {
+      default_model: "openrouter/custom-model",
+    },
+  });
+
+  assert.equal(config.providers?.primary, "huggingface");
+  assert.equal(config.providers?.fallback, "openrouter");
+  assert.deepEqual(config.providers?.fallback_on, ["quota_exceeded"]);
+  assert.equal(config.openrouter?.default_model, "openrouter/custom-model");
 });
 
 test("invalid provider failure behavior falls back to warn", () => {

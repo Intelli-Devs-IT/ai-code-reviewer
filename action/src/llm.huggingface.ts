@@ -5,6 +5,7 @@ import {
   InvalidModelResponseError,
 } from "./helpers/modelResponseValidation";
 import { DEFAULT_HUGGINGFACE_MODEL } from "./helpers/huggingFaceModels";
+import { LlmProvider } from "./helpers/llmProvider";
 
 export {
   DEFAULT_HUGGINGFACE_MODEL,
@@ -17,7 +18,9 @@ interface Logger {
   warning: (message: string) => void;
 }
 
-export class HuggingFaceLLM {
+export class HuggingFaceLLM implements LlmProvider {
+  readonly name = "huggingface";
+
   private apiKey: string;
   private model: string;
   private client: OpenAI;
@@ -101,5 +104,19 @@ export class HuggingFaceLLM {
     // } catch {
     //   return null;
     // }
+  }
+
+  async review(params: {
+    prompt: string;
+    model: string;
+    temperature?: number;
+  }): Promise<string> {
+    const text = await this.reviewDiff(params.prompt, params.model);
+
+    return assertValidModelResponseText({
+      text: text ?? "",
+      model: params.model,
+      provider: "Hugging Face",
+    });
   }
 }

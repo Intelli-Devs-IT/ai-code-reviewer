@@ -1,4 +1,4 @@
-import { ProviderFailureBehavior } from "../config";
+import type { ProviderFailureBehavior } from "../config";
 import {
   getSafeProviderErrorMessage,
   InvalidModelResponseError,
@@ -16,6 +16,7 @@ export type ProviderFailureType =
 export interface ProviderFailure {
   filePath?: string;
   functionName?: string;
+  provider?: string;
   model?: string;
   type: ProviderFailureType;
   message: string;
@@ -34,7 +35,7 @@ export function classifyProviderError(error: unknown): ProviderFailureType {
     return "quota_exceeded";
   }
 
-  if (status === 429 || message.includes("rate limit")) {
+  if (status === 408 || status === 429 || message.includes("rate limit")) {
     return "rate_limited";
   }
 
@@ -57,6 +58,9 @@ export function classifyProviderError(error: unknown): ProviderFailureType {
   }
 
   if (
+    status === 500 ||
+    status === 502 ||
+    status === 504 ||
     message.includes("network") ||
     message.includes("fetch failed") ||
     message.includes("econnreset") ||
@@ -72,11 +76,13 @@ export function createProviderFailure(params: {
   error: unknown;
   filePath?: string;
   functionName?: string;
+  provider?: string;
   model?: string;
 }): ProviderFailure {
   return {
     filePath: params.filePath,
     functionName: params.functionName,
+    provider: params.provider,
     model: params.model,
     type: classifyProviderError(params.error),
     message: getSafeProviderErrorMessage(params.error),
@@ -91,6 +97,7 @@ export function formatProviderFailureForLog(failure: ProviderFailure): string {
 
   if (failure.filePath) lines.push(`file=${failure.filePath}`);
   if (failure.functionName) lines.push(`function=${failure.functionName}`);
+  if (failure.provider) lines.push(`provider=${failure.provider}`);
   if (failure.model) lines.push(`model=${failure.model}`);
   if (failure.message) lines.push(`message=${failure.message}`);
 
