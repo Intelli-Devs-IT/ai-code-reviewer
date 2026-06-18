@@ -76,7 +76,40 @@ Goals:
 * accepted security findings can raise effective risk in security mode: completed
 * unsafe dependency checks: planned
 
-### Phase 5: Productization
+### Phase 5: External Analysis Signals
+
+Planned future work:
+
+* consume lint report files
+* consume Semgrep report files
+* consume test result files
+* correlate tool findings with changed files/functions
+* use tool evidence to improve inline review prompts
+* include tool evidence in the summary comment
+* raise risk when Semgrep or tests detect serious issues
+* avoid posting tool findings that are unrelated to changed files
+* keep external analysis optional and config-driven
+
+Proposed future `.ai-reviewer.yml` config shape:
+
+```yaml
+analysis:
+  lint:
+    enabled: true
+    report_path: reports/eslint.json
+
+  semgrep:
+    enabled: true
+    report_path: reports/semgrep.json
+
+  tests:
+    enabled: true
+    report_path: reports/test-results.json
+```
+
+This configuration is planned and not implemented yet.
+
+### Phase 6: Productization
 
 * SaaS configuration
 * dashboard

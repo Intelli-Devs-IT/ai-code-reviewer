@@ -1,4 +1,9 @@
 import OpenAI from "openai";
+import {
+  assertValidModelResponseText,
+  extractModelResponseText,
+  InvalidModelResponseError,
+} from "./helpers/modelResponseValidation";
 
 const models = [
   "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B:novita",
@@ -13,13 +18,20 @@ const models = [
 
 export const DEFAULT_HUGGINGFACE_MODEL = models[1];
 const baseurl = "https://router.huggingface.co/v1";
+
+interface Logger {
+  warning: (message: string) => void;
+}
+
 export class HuggingFaceLLM {
   private apiKey: string;
   private model: string;
   private client: OpenAI;
+  private logger?: Logger;
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, logger?: Logger) {
     this.apiKey = apiKey;
+    this.logger = logger;
     // this.model = "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B:novita";
     this.model = DEFAULT_HUGGINGFACE_MODEL;
     this.client = new OpenAI({
@@ -30,11 +42,13 @@ export class HuggingFaceLLM {
 
   async reviewDiff(
     prompt: string,
-    modelOverride?: string,
+    modelOverride?: string
   ): Promise<string | null> {
+    const selectedModel = modelOverride ?? this.model;
+
     try {
       const chatCompletion = await this.client.chat.completions.create({
-        model: modelOverride ?? this.model,
+        model: selectedModel,
         messages: [
           {
             role: "user",
@@ -42,9 +56,19 @@ export class HuggingFaceLLM {
           },
         ],
       });
-      return chatCompletion.choices[0].message?.content ?? null;
+      const text = extractModelResponseText(chatCompletion);
+
+      return assertValidModelResponseText({
+        text: text ?? "",
+        model: selectedModel,
+        provider: "Hugging Face",
+      });
     } catch (error) {
-      return error instanceof Error ? error.message : String(error);
+      if (error instanceof InvalidModelResponseError) {
+        this.logger?.warning(error.message);
+      }
+
+      throw error;
     }
 
     // This is the old implementation using fetch

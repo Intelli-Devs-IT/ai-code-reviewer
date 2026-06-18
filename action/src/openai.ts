@@ -1,5 +1,9 @@
 import OpenAI from "openai";
 import * as core from "@actions/core";
+import {
+  assertValidModelResponseText,
+  extractModelResponseText,
+} from "./helpers/modelResponseValidation";
 
 const openaiKey = process.env.OPENAI_API_KEY;
 if (!openaiKey) throw new Error("OPENAI_API_KEY not found");
@@ -37,13 +41,21 @@ const rules: Rule[] = [
 
 class OpenAILLM implements LLMClient {
   async reviewDiff(prompt: string) {
+    const model = "gpt-3.5-turbo";
+
     try {
       const res = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
+        model,
         messages: [{ role: "user", content: prompt }],
         max_tokens: 200,
       });
-      return res.choices[0].message?.content ?? null;
+      const text = extractModelResponseText(res);
+
+      return assertValidModelResponseText({
+        text: text ?? "",
+        model,
+        provider: "OpenAI",
+      });
     } catch {
       return null;
     }
@@ -51,19 +63,37 @@ class OpenAILLM implements LLMClient {
 }
 class OllamaLLM implements LLMClient {
   async reviewDiff(prompt: string) {
+    const model = "qwen2.5-coder:1.5b";
+
     try {
       // LOCAL ollama model = "qwen2.5-coder:1.5b"
       const response = await fetch("http://localhost:11434/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "qwen2.5-coder:1.5b",
+          model,
           prompt,
           stream: false,
         }),
       });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const contentType = response.headers.get("content-type");
+      if (contentType && !contentType.toLowerCase().includes("json")) {
+        return null;
+      }
+
       const data = await response.json();
-      return data.response;
+      const text = extractModelResponseText(data);
+
+      return assertValidModelResponseText({
+        text: text ?? "",
+        model,
+        provider: "Ollama",
+      });
     } catch (err: any) {
       return null;
     }

@@ -33,3 +33,15 @@ test("source unavailable falls through to scoped review fallback", () => {
     /sourceCode === null\s*\?\s*\[\]\s*:\s*extractFunctionsFromSource/
   );
 });
+
+test("provider failures skip inline comment creation and continue", () => {
+  const providerFailureBlocks = INDEX_SOURCE.match(
+    /catch \(error\) \{[\s\S]*?reason: "provider_model_call_failed"[\s\S]*?continue;/g
+  );
+
+  assert.equal(providerFailureBlocks?.length, 2);
+
+  for (const block of providerFailureBlocks ?? []) {
+    assert.doesNotMatch(block, /createReviewComment/);
+  }
+});

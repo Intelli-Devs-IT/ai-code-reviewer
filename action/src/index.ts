@@ -38,6 +38,7 @@ import {
 } from "./helpers/modelRouting";
 import { logReviewSkip } from "./helpers/reviewDiagnostics";
 import { FileSourceFetcher } from "./helpers/fileSourceFetcher";
+import { getSafeProviderErrorMessage } from "./helpers/modelResponseValidation";
 
 /* =======================
    Helpers: file filtering
@@ -339,7 +340,7 @@ async function run() {
        ======================= */
 
     const hfKey = process.env.HF_API_KEY;
-    const llm = hfKey ? new HuggingFaceLLM(hfKey) : null;
+    const llm = hfKey ? new HuggingFaceLLM(hfKey, core) : null;
 
     if (!llm) {
       core.warning("HF_API_KEY not set. AI reviews disabled.");
@@ -545,7 +546,7 @@ async function run() {
                 prompt,
                 modelRoutingEnabled ? inlineReviewModel : undefined
               );
-            } catch {
+            } catch (error) {
               logReviewSkip(core, {
                 filePath: file.filename,
                 functionName: target.fn.name,
@@ -556,7 +557,11 @@ async function run() {
                 securityReviewEnabled,
                 threshold: INLINE_CONFIDENCE_THRESHOLD,
               });
-              core.warning(`AI inline review failed for ${file.filename}`);
+              core.warning(
+                `AI inline review failed for ${file.filename}:${target.fn.name} using ${inlineReviewModel}: ${getSafeProviderErrorMessage(
+                  error
+                )}`
+              );
               continue;
             }
 
@@ -701,7 +706,7 @@ async function run() {
             prompt,
             modelRoutingEnabled ? inlineReviewModel : undefined
           );
-        } catch {
+        } catch (error) {
           logReviewSkip(core, {
             filePath: file.filename,
             reason: "provider_model_call_failed",
@@ -711,7 +716,11 @@ async function run() {
             securityReviewEnabled,
             threshold: INLINE_CONFIDENCE_THRESHOLD,
           });
-          core.warning(`AI inline review failed for ${file.filename}`);
+          core.warning(
+            `AI inline review failed for ${file.filename} using ${inlineReviewModel}: ${getSafeProviderErrorMessage(
+              error
+            )}`
+          );
           continue;
         }
 

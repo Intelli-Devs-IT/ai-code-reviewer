@@ -18,6 +18,7 @@ This file describes what the project currently does. Treat the codebase as the f
 * Lenient strictness is tuned to surface concrete edge-case, safety, and maintainability feedback without disabling NO_REVIEW.
 * Optional security review mode can strengthen inline prompts for security-sensitive code.
 * Optional model routing can select model names by detected file language.
+* Provider responses are validated so empty responses, raw HTML, and obvious provider errors are skipped before review cleanup and scoring.
 * Inline comments are posted near the correct function area.
 * Unchanged functions are ignored by the AST-based inline review path.
 * Summary comment is created or updated.
@@ -70,3 +71,9 @@ entire file
 
 * Duplicate inline comment prevention across reruns needs verification before further claims. Keep existing dedupe behavior intact unless a task specifically changes it.
 * The summary and risk-label workflow should be modified only with focused tests because it affects PR-visible output and merge blocking.
+
+## Future Work
+
+* External lint, Semgrep, and test result integration is not implemented yet.
+* Current reviews are based primarily on changed code, AST function context, LLM analysis, confidence scoring, and risk classification.
+* Future work should allow optional external analysis reports to be consumed and correlated with changed files/functions.

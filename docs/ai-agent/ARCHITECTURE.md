@@ -10,15 +10,16 @@
 6. AST-based function extraction
 7. Changed-function matching
 8. LLM review generation
-9. Configurable inline prompt modes
-10. Optional model routing by file language
-11. Model output cleanup
-12. Confidence scoring
-13. Inline comment posting
-14. Summary comment creation/update
-15. Risk classification
-16. Risk label handling
-17. Merge blocking
+9. Provider response validation
+10. Configurable inline prompt modes
+11. Optional model routing by file language
+12. Model output cleanup
+13. Confidence scoring
+14. Inline comment posting
+15. Summary comment creation/update
+16. Risk classification
+17. Risk label handling
+18. Merge blocking
 
 ## Architecture Diagram
 
@@ -40,6 +41,8 @@ Match Changed Lines to Functions
 ↓
 Review Each Changed Function Once
 ↓
+Validate Provider Response
+↓
 Clean + Normalize LLM Output
 ↓
 Score Confidence
@@ -52,6 +55,30 @@ Apply Risk Label
 ↓
 Block Merge if High Risk
 
+## Future Architecture: External Analysis Signals
+
+This is planned future architecture, not current runtime behavior.
+
+Pull Request
+->
+GitHub Action
+->
+Fetch Changed Files
+->
+Fetch Optional Analysis Reports
+->
+Correlate Reports With Changed Files/Functions
+->
+LLM Review With Code + Tool Evidence
+->
+Inline Comments
+->
+Summary
+->
+Risk Label
+->
+Merge Blocking
+
 ## Component Notes
 
 * The GitHub Action entrypoint is `action/src/index.ts`.
@@ -59,6 +86,7 @@ Block Merge if High Risk
 * Config loading lives in `action/src/load-config.ts`.
 * Full file source fetching lives in `action/src/helpers/fileSourceFetcher.ts` and uses cached Git tree/blob API calls for PR head content.
 * Inline review prompt formatting lives in `action/src/helpers/reviewPrompt.ts`.
+* Provider response validation lives in `action/src/helpers/modelResponseValidation.ts`.
 * Model routing lives in `action/src/helpers/modelRouting.ts`.
 * Inline review skip diagnostics live in `action/src/helpers/reviewDiagnostics.ts`.
 * Changed line extraction lives in `action/src/helpers/util.helpers.ts`.
@@ -77,6 +105,7 @@ Block Merge if High Risk
 * Review strictness is configurable and defaults to balanced behavior.
 * Security review mode is opt-in through `.ai-reviewer.yml` and should not change default prompt behavior when disabled.
 * Model routing is opt-in through `.ai-reviewer.yml` and should preserve the existing default model when disabled.
+* Provider responses must be validated before model text enters cleanup, confidence scoring, comments, or summary findings.
 * Inline comments should be attached to changed lines whenever possible.
 * If a function start line is not commentable, use a changed line inside that function.
 * If AST extraction fails or returns no functions, the old scoped diff fallback can be used.

@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.HuggingFaceLLM = exports.DEFAULT_HUGGINGFACE_MODEL = void 0;
 const openai_1 = __importDefault(require("openai"));
+const modelResponseValidation_1 = require("./helpers/modelResponseValidation");
 const models = [
     "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B:novita",
     "Qwen/Qwen2.5-Coder-32B-Instruct:nscale",
@@ -18,8 +19,9 @@ const models = [
 exports.DEFAULT_HUGGINGFACE_MODEL = models[1];
 const baseurl = "https://router.huggingface.co/v1";
 class HuggingFaceLLM {
-    constructor(apiKey) {
+    constructor(apiKey, logger) {
         this.apiKey = apiKey;
+        this.logger = logger;
         // this.model = "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B:novita";
         this.model = exports.DEFAULT_HUGGINGFACE_MODEL;
         this.client = new openai_1.default({
@@ -28,9 +30,10 @@ class HuggingFaceLLM {
         });
     }
     async reviewDiff(prompt, modelOverride) {
+        const selectedModel = modelOverride ?? this.model;
         try {
             const chatCompletion = await this.client.chat.completions.create({
-                model: modelOverride ?? this.model,
+                model: selectedModel,
                 messages: [
                     {
                         role: "user",
@@ -38,10 +41,18 @@ class HuggingFaceLLM {
                     },
                 ],
             });
-            return chatCompletion.choices[0].message?.content ?? null;
+            const text = (0, modelResponseValidation_1.extractModelResponseText)(chatCompletion);
+            return (0, modelResponseValidation_1.assertValidModelResponseText)({
+                text: text ?? "",
+                model: selectedModel,
+                provider: "Hugging Face",
+            });
         }
         catch (error) {
-            return error instanceof Error ? error.message : String(error);
+            if (error instanceof modelResponseValidation_1.InvalidModelResponseError) {
+                this.logger?.warning(error.message);
+            }
+            throw error;
         }
         // This is the old implementation using fetch
         // try {

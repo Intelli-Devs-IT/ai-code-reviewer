@@ -28,6 +28,16 @@ The coding agent must:
 * Run tests before finishing.
 * Report what changed and what was not changed.
 
+## Future External Analysis Tasks
+
+When implementing planned lint, Semgrep, or test-result integration, work incrementally:
+
+1. Read configured report files.
+2. Parse one report format at a time.
+3. Correlate findings with changed files/functions.
+4. Include relevant tool evidence in prompts and summary output.
+5. Consider running tools directly only after report-file ingestion is working.
+
 ## Recommended Final Response Format for Coding Agents
 
 When done, the agent should report:

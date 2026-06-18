@@ -50,6 +50,7 @@ const reviewPrompt_1 = require("./helpers/reviewPrompt");
 const modelRouting_1 = require("./helpers/modelRouting");
 const reviewDiagnostics_1 = require("./helpers/reviewDiagnostics");
 const fileSourceFetcher_1 = require("./helpers/fileSourceFetcher");
+const modelResponseValidation_1 = require("./helpers/modelResponseValidation");
 /* =======================
    Helpers: file filtering
    ======================= */
@@ -269,7 +270,7 @@ async function run() {
            Init LLM (optional)
            ======================= */
         const hfKey = process.env.HF_API_KEY;
-        const llm = hfKey ? new llm_huggingface_1.HuggingFaceLLM(hfKey) : null;
+        const llm = hfKey ? new llm_huggingface_1.HuggingFaceLLM(hfKey, core) : null;
         if (!llm) {
             core.warning("HF_API_KEY not set. AI reviews disabled.");
             return;
@@ -421,7 +422,7 @@ async function run() {
                     try {
                         raw = await llm.reviewDiff(prompt, modelRoutingEnabled ? inlineReviewModel : undefined);
                     }
-                    catch {
+                    catch (error) {
                         (0, reviewDiagnostics_1.logReviewSkip)(core, {
                             filePath: file.filename,
                             functionName: target.fn.name,
@@ -432,7 +433,7 @@ async function run() {
                             securityReviewEnabled,
                             threshold: INLINE_CONFIDENCE_THRESHOLD,
                         });
-                        core.warning(`AI inline review failed for ${file.filename}`);
+                        core.warning(`AI inline review failed for ${file.filename}:${target.fn.name} using ${inlineReviewModel}: ${(0, modelResponseValidation_1.getSafeProviderErrorMessage)(error)}`);
                         continue;
                     }
                     const prepared = (0, reviewOutput_1.prepareReviewWithDiagnostics)(raw);
@@ -548,7 +549,7 @@ async function run() {
             try {
                 raw = await llm.reviewDiff(prompt, modelRoutingEnabled ? inlineReviewModel : undefined);
             }
-            catch {
+            catch (error) {
                 (0, reviewDiagnostics_1.logReviewSkip)(core, {
                     filePath: file.filename,
                     reason: "provider_model_call_failed",
@@ -558,7 +559,7 @@ async function run() {
                     securityReviewEnabled,
                     threshold: INLINE_CONFIDENCE_THRESHOLD,
                 });
-                core.warning(`AI inline review failed for ${file.filename}`);
+                core.warning(`AI inline review failed for ${file.filename} using ${inlineReviewModel}: ${(0, modelResponseValidation_1.getSafeProviderErrorMessage)(error)}`);
                 continue;
             }
             const prepared = (0, reviewOutput_1.prepareReviewWithDiagnostics)(raw);

@@ -15,11 +15,12 @@ export interface ReviewSkipLogParams {
 }
 
 const SECRET_PATTERNS = [
+  /Authorization:\s*Bearer\s+[A-Za-z0-9._-]+/gi,
+  /Bearer\s+[A-Za-z0-9._-]+/gi,
   /ghp_[A-Za-z0-9_]+/g,
   /github_pat_[A-Za-z0-9_]+/g,
   /hf_[A-Za-z0-9_]+/g,
   /sk-[A-Za-z0-9_-]+/g,
-  /Bearer\s+[A-Za-z0-9._-]+/gi,
 ];
 
 export function buildReviewSkipLog(params: ReviewSkipLogParams): string {
