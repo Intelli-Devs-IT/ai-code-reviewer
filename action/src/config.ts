@@ -46,6 +46,20 @@ export interface ReviewerConfig {
   openrouter?: {
     default_model?: string;
   };
+  analysis?: {
+    lint?: {
+      enabled?: boolean;
+      report_path?: string;
+    };
+    semgrep?: {
+      enabled?: boolean;
+      report_path?: string;
+    };
+    tests?: {
+      enabled?: boolean;
+      report_path?: string;
+    };
+  };
   security_review?: {
     enabled?: boolean;
   };
@@ -90,6 +104,17 @@ export const DEFAULT_CONFIG: ReviewerConfig = {
   },
   openrouter: {
     default_model: DEFAULT_OPENROUTER_MODEL,
+  },
+  analysis: {
+    lint: {
+      enabled: false,
+    },
+    semgrep: {
+      enabled: false,
+    },
+    tests: {
+      enabled: false,
+    },
   },
   security_review: {
     enabled: false,
@@ -173,6 +198,20 @@ export function mergeReviewerConfig(
     openrouter: {
       ...DEFAULT_CONFIG.openrouter,
       ...(config.openrouter ?? {}),
+    },
+    analysis: {
+      lint: {
+        ...DEFAULT_CONFIG.analysis?.lint,
+        ...(config.analysis?.lint ?? {}),
+      },
+      semgrep: {
+        ...DEFAULT_CONFIG.analysis?.semgrep,
+        ...(config.analysis?.semgrep ?? {}),
+      },
+      tests: {
+        ...DEFAULT_CONFIG.analysis?.tests,
+        ...(config.analysis?.tests ?? {}),
+      },
     },
     security_review: {
       ...DEFAULT_CONFIG.security_review,

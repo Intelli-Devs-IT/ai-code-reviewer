@@ -48,6 +48,17 @@ exports.DEFAULT_CONFIG = {
     openrouter: {
         default_model: exports.DEFAULT_OPENROUTER_MODEL,
     },
+    analysis: {
+        lint: {
+            enabled: false,
+        },
+        semgrep: {
+            enabled: false,
+        },
+        tests: {
+            enabled: false,
+        },
+    },
     security_review: {
         enabled: false,
     },
@@ -108,6 +119,20 @@ function mergeReviewerConfig(config = {}) {
         openrouter: {
             ...exports.DEFAULT_CONFIG.openrouter,
             ...(config.openrouter ?? {}),
+        },
+        analysis: {
+            lint: {
+                ...exports.DEFAULT_CONFIG.analysis?.lint,
+                ...(config.analysis?.lint ?? {}),
+            },
+            semgrep: {
+                ...exports.DEFAULT_CONFIG.analysis?.semgrep,
+                ...(config.analysis?.semgrep ?? {}),
+            },
+            tests: {
+                ...exports.DEFAULT_CONFIG.analysis?.tests,
+                ...(config.analysis?.tests ?? {}),
+            },
         },
         security_review: {
             ...exports.DEFAULT_CONFIG.security_review,

@@ -15,7 +15,7 @@ function createSummaryFinding({ filePath, functionName, review, risk, }) {
         risk,
     };
 }
-function buildSummaryBody({ reviewedFilePaths, findings, providerFailures = [], providerFailureBehavior = "warn", reviewLimits, }) {
+function buildSummaryBody({ reviewedFilePaths, findings, providerFailures = [], providerFailureBehavior = "warn", reviewLimits, externalAnalysis, }) {
     const dedupedFindings = dedupeFindings(findings);
     const overallRisk = reviewedFilePaths.size === 0 && providerFailures.length > 0
         ? "unknown"
@@ -36,6 +36,8 @@ ${formatKeyFindings(dedupedFindings, providerFailures)}
 ${formatProviderFailures(providerFailures, providerFailureBehavior)}
 
 ${formatReviewLimits(reviewLimits)}
+
+${formatExternalAnalysis(externalAnalysis)}
 
 ## Risk Analysis
 
@@ -174,6 +176,26 @@ Some changed functions were skipped because configured review limits were reache
 * Max inline comments: ${reviewLimits.maxInlineComments}
 * Max functions per file: ${reviewLimits.maxFunctionsPerFile}
 * Max total functions: ${reviewLimits.maxTotalFunctions}`;
+}
+function formatExternalAnalysis(externalAnalysis) {
+    if (!externalAnalysis ||
+        (externalAnalysis.findings.length === 0 &&
+            externalAnalysis.loadWarnings.length === 0)) {
+        return "";
+    }
+    const lintCount = countFindingsByTool(externalAnalysis, "lint");
+    const semgrepCount = countFindingsByTool(externalAnalysis, "semgrep");
+    const testCount = countFindingsByTool(externalAnalysis, "tests");
+    return `## External Analysis
+
+* Lint findings loaded: ${lintCount}
+* Semgrep findings loaded: ${semgrepCount}
+* Test findings loaded: ${testCount}
+* Report warnings: ${externalAnalysis.loadWarnings.length}`;
+}
+function countFindingsByTool(externalAnalysis, tool) {
+    return externalAnalysis.findings.filter((finding) => finding.tool === tool)
+        .length;
 }
 function hasLimitSkips(reviewLimits) {
     return Boolean(reviewLimits && (0, reviewLimits_1.hasReviewLimitSkips)(reviewLimits));

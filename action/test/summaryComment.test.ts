@@ -228,6 +228,43 @@ test("summary mentions review limits when limits are reached", () => {
   assert.match(body, /review coverage was partial/);
 });
 
+test("summary includes external analysis counts when reports are loaded", () => {
+  const body = buildSummaryBody({
+    reviewedFilePaths: new Set(["src/a.ts"]),
+    findings: [],
+    externalAnalysis: {
+      findings: [
+        {
+          tool: "lint",
+          filePath: "src/a.ts",
+          severity: "warning",
+          message: "lint issue",
+        },
+        {
+          tool: "semgrep",
+          filePath: "src/a.ts",
+          severity: "error",
+          message: "semgrep issue",
+        },
+        {
+          tool: "tests",
+          filePath: "src/a.test.ts",
+          severity: "error",
+          message: "test issue",
+        },
+      ],
+      loadWarnings: ["missing optional report"],
+    },
+  });
+
+  assert.match(body, /## External Analysis/);
+  assert.match(body, /\* Lint findings loaded: 1/);
+  assert.match(body, /\* Semgrep findings loaded: 1/);
+  assert.match(body, /\* Test findings loaded: 1/);
+  assert.match(body, /\* Report warnings: 1/);
+  assert.doesNotMatch(body, /missing optional report/);
+});
+
 function createFinding(
   filePath: string,
   review: string,

@@ -6,6 +6,7 @@ import {
   hasReviewLimitSkips,
   ReviewLimitState,
 } from "./reviewLimits";
+import { ExternalAnalysisSummary } from "./externalAnalysis";
 
 export const SUMMARY_MARKER = "<!-- ai-code-reviewer-FB:summary -->";
 
@@ -24,6 +25,7 @@ export interface SummaryBodyOptions {
   providerFailures?: ProviderFailure[];
   providerFailureBehavior?: "warn" | "fail" | "skip";
   reviewLimits?: ReviewLimitState;
+  externalAnalysis?: ExternalAnalysisSummary;
 }
 
 export function createSummaryFinding({
@@ -51,6 +53,7 @@ export function buildSummaryBody({
   providerFailures = [],
   providerFailureBehavior = "warn",
   reviewLimits,
+  externalAnalysis,
 }: SummaryBodyOptions): string {
   const dedupedFindings = dedupeFindings(findings);
   const overallRisk =
@@ -74,6 +77,8 @@ ${formatKeyFindings(dedupedFindings, providerFailures)}
 ${formatProviderFailures(providerFailures, providerFailureBehavior)}
 
 ${formatReviewLimits(reviewLimits)}
+
+${formatExternalAnalysis(externalAnalysis)}
 
 ## Risk Analysis
 
@@ -277,6 +282,37 @@ Some changed functions were skipped because configured review limits were reache
 * Max inline comments: ${reviewLimits.maxInlineComments}
 * Max functions per file: ${reviewLimits.maxFunctionsPerFile}
 * Max total functions: ${reviewLimits.maxTotalFunctions}`;
+}
+
+function formatExternalAnalysis(
+  externalAnalysis?: ExternalAnalysisSummary
+): string {
+  if (
+    !externalAnalysis ||
+    (externalAnalysis.findings.length === 0 &&
+      externalAnalysis.loadWarnings.length === 0)
+  ) {
+    return "";
+  }
+
+  const lintCount = countFindingsByTool(externalAnalysis, "lint");
+  const semgrepCount = countFindingsByTool(externalAnalysis, "semgrep");
+  const testCount = countFindingsByTool(externalAnalysis, "tests");
+
+  return `## External Analysis
+
+* Lint findings loaded: ${lintCount}
+* Semgrep findings loaded: ${semgrepCount}
+* Test findings loaded: ${testCount}
+* Report warnings: ${externalAnalysis.loadWarnings.length}`;
+}
+
+function countFindingsByTool(
+  externalAnalysis: ExternalAnalysisSummary,
+  tool: "lint" | "semgrep" | "tests"
+): number {
+  return externalAnalysis.findings.filter((finding) => finding.tool === tool)
+    .length;
 }
 
 function hasLimitSkips(

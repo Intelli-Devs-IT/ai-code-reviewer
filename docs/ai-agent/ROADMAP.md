@@ -28,6 +28,7 @@
 * configurable model validation for tested, custom, private, and experimental models
 * provider quota/payment failure handling in logs and summary output
 * optional OpenRouter provider with provider-aware primary/fallback model resolution
+* external analysis report configuration and parsing foundation
 
 ## Current Focus
 
@@ -84,17 +85,17 @@ Goals:
 
 Planned future work:
 
-* consume lint report files
-* consume Semgrep report files
-* consume test result files
-* correlate tool findings with changed files/functions
+* consume lint report files: completed for ESLint JSON
+* consume Semgrep report files: completed for common Semgrep JSON
+* consume test result files: completed for simple generic JSON
+* correlate tool findings with changed files/functions: basic file-level helper completed, prompt integration planned
 * use tool evidence to improve inline review prompts
 * include tool evidence in the summary comment
 * raise risk when Semgrep or tests detect serious issues
 * avoid posting tool findings that are unrelated to changed files
 * keep external analysis optional and config-driven
 
-Proposed future `.ai-reviewer.yml` config shape:
+Implemented `.ai-reviewer.yml` config shape for report loading:
 
 ```yaml
 analysis:
@@ -111,7 +112,7 @@ analysis:
     report_path: reports/test-results.json
 ```
 
-This configuration is planned and not implemented yet.
+This configuration is implemented for report loading and parsing. Prompt and inline-comment use of report evidence is planned future work.
 
 ### Phase 6: Productization
 

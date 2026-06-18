@@ -59,6 +59,7 @@ import {
   recordFunctionReviewAttempt,
   recordReviewLimitSkip,
 } from "./helpers/reviewLimits";
+import { loadExternalAnalysisReports } from "./helpers/externalAnalysis";
 
 /* =======================
    Helpers: file filtering
@@ -386,6 +387,11 @@ async function run() {
     }
 
     validateConfiguredModels(config, core);
+    const externalAnalysis = await loadExternalAnalysisReports({
+      config,
+      workspaceRoot: process.env.GITHUB_WORKSPACE ?? process.cwd(),
+      logger: core,
+    });
 
     /* =======================
        Init LLM (optional)
@@ -1056,6 +1062,7 @@ async function run() {
           providerFailures,
           providerFailureBehavior,
           reviewLimits: reviewLimitState,
+          externalAnalysis,
         })
       );
 
@@ -1109,6 +1116,7 @@ async function run() {
           providerFailures,
           providerFailureBehavior,
           reviewLimits: reviewLimitState,
+          externalAnalysis,
         })
       );
 
@@ -1133,6 +1141,7 @@ async function run() {
         providerFailures,
         providerFailureBehavior,
         reviewLimits: reviewLimitState,
+        externalAnalysis,
       })
     );
 

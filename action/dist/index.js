@@ -55,6 +55,7 @@ const modelValidation_1 = require("./helpers/modelValidation");
 const providerFailures_1 = require("./helpers/providerFailures");
 const llmProvider_1 = require("./helpers/llmProvider");
 const reviewLimits_1 = require("./helpers/reviewLimits");
+const externalAnalysis_1 = require("./helpers/externalAnalysis");
 /* =======================
    Helpers: file filtering
    ======================= */
@@ -290,6 +291,11 @@ async function run() {
             return;
         }
         (0, modelValidation_1.validateConfiguredModels)(config, core);
+        const externalAnalysis = await (0, externalAnalysis_1.loadExternalAnalysisReports)({
+            config,
+            workspaceRoot: process.env.GITHUB_WORKSPACE ?? process.cwd(),
+            logger: core,
+        });
         /* =======================
            Init LLM (optional)
            ======================= */
@@ -835,6 +841,7 @@ async function run() {
                 providerFailures,
                 providerFailureBehavior,
                 reviewLimits: reviewLimitState,
+                externalAnalysis,
             }));
             if ((0, providerFailures_1.shouldFailForProviderFailures)(providerFailureBehavior, providerFailures)) {
                 core.setFailed("AI review could not be completed because provider calls failed.");
@@ -855,6 +862,7 @@ async function run() {
                 providerFailures,
                 providerFailureBehavior,
                 reviewLimits: reviewLimitState,
+                externalAnalysis,
             }));
             core.setFailed("🚨 AI review detected HIGH-RISK issues. Add 'ai-review: override' to bypass.");
             return;
@@ -868,6 +876,7 @@ async function run() {
             providerFailures,
             providerFailureBehavior,
             reviewLimits: reviewLimitState,
+            externalAnalysis,
         }));
         if ((0, providerFailures_1.shouldFailForProviderFailures)(providerFailureBehavior, providerFailures)) {
             core.setFailed("AI review completed with provider failures.");

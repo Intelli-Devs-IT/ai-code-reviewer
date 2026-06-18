@@ -38,6 +38,14 @@ test("config defaults review cost and noise limits", () => {
   );
 });
 
+test("config defaults external analysis reports to disabled", () => {
+  const config = mergeReviewerConfig();
+
+  assert.equal(config.analysis?.lint?.enabled, false);
+  assert.equal(config.analysis?.semgrep?.enabled, false);
+  assert.equal(config.analysis?.tests?.enabled, false);
+});
+
 test("config defaults model routing to disabled", () => {
   assert.equal(DEFAULT_CONFIG.model_routing?.enabled, false);
   assert.equal(mergeReviewerConfig().model_routing?.enabled, false);
@@ -248,6 +256,32 @@ test("config reads review cost and noise limits", () => {
   assert.equal(config.review?.max_inline_comments, 5);
   assert.equal(config.review?.max_functions_per_file, 3);
   assert.equal(config.review?.max_total_functions, 12);
+});
+
+test("config reads external analysis report settings", () => {
+  const config = mergeReviewerConfig({
+    analysis: {
+      lint: {
+        enabled: true,
+        report_path: "reports/eslint.json",
+      },
+      semgrep: {
+        enabled: true,
+        report_path: "reports/semgrep.json",
+      },
+      tests: {
+        enabled: true,
+        report_path: "reports/test-results.json",
+      },
+    },
+  });
+
+  assert.equal(config.analysis?.lint?.enabled, true);
+  assert.equal(config.analysis?.lint?.report_path, "reports/eslint.json");
+  assert.equal(config.analysis?.semgrep?.enabled, true);
+  assert.equal(config.analysis?.semgrep?.report_path, "reports/semgrep.json");
+  assert.equal(config.analysis?.tests?.enabled, true);
+  assert.equal(config.analysis?.tests?.report_path, "reports/test-results.json");
 });
 
 test("invalid review cost and noise limits fall back to defaults", () => {

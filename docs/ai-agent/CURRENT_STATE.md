@@ -23,6 +23,7 @@ This file describes what the project currently does. Treat the codebase as the f
 * Provider responses are validated so empty responses, raw HTML, and obvious provider errors are skipped before review cleanup and scoring.
 * Provider quota/payment failures are classified and shown in the summary so failed provider calls are not presented as successful low-risk reviews.
 * OpenRouter can be configured as an optional primary or fallback provider, with provider-aware model resolution for primary and fallback calls.
+* Optional external ESLint, Semgrep, and simple test-result JSON reports can be loaded, parsed, normalized, and counted in the summary.
 * Inline comments are posted near the correct function area.
 * Unchanged functions are ignored by the AST-based inline review path.
 * Summary comment is created or updated.
@@ -79,6 +80,6 @@ entire file
 
 ## Future Work
 
-* External lint, Semgrep, and test result integration is not implemented yet.
+* External lint, Semgrep, and test result report loading is implemented, but findings are not yet used as prompt evidence or posted as inline comments.
 * Current reviews are based primarily on changed code, AST function context, LLM analysis, confidence scoring, and risk classification.
-* Future work should allow optional external analysis reports to be consumed and correlated with changed files/functions.
+* Future work should correlate external analysis reports with changed functions and use relevant evidence in prompts and summaries.
