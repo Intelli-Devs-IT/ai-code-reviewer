@@ -53,7 +53,7 @@ Provider failure handling can be configured with `provider_failures.behavior`. I
 
 Hugging Face remains the default primary LLM provider. OpenRouter can be configured as either a primary or fallback provider with `providers.primary: openrouter` or `providers.fallback: openrouter` and `OPENROUTER_API_KEY`. Provider-specific defaults are kept separate so Hugging Face model names are not used for OpenRouter calls.
 
-Optional external analysis report loading can be enabled with `analysis.lint`, `analysis.semgrep`, and `analysis.tests`. The action can load and normalize existing JSON report files, but it does not run those tools directly and does not yet use report findings to drive inline review prompts.
+Optional external analysis report loading can be enabled with `analysis.lint`, `analysis.semgrep`, and `analysis.tests`. The action can load and normalize existing JSON report files, correlate findings with changed files/functions, and include a capped evidence section in inline review prompts. It does not run those tools directly and does not post tool findings blindly as comments.
 
 Example `.ai-reviewer.yml`:
 

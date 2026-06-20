@@ -15,11 +15,14 @@ function createSummaryFinding({ filePath, functionName, review, risk, }) {
         risk,
     };
 }
-function buildSummaryBody({ reviewedFilePaths, findings, providerFailures = [], providerFailureBehavior = "warn", reviewLimits, externalAnalysis, }) {
+function buildSummaryBody({ reviewedFilePaths, findings, providerFailures = [], providerFailureBehavior = "warn", reviewLimits, externalAnalysis, externalAnalysisRisk = "low", }) {
     const dedupedFindings = dedupeFindings(findings);
-    const overallRisk = reviewedFilePaths.size === 0 && providerFailures.length > 0
+    const baseOverallRisk = reviewedFilePaths.size === 0 && providerFailures.length > 0
         ? "unknown"
         : getHighestRisk(dedupedFindings);
+    const overallRisk = baseOverallRisk === "unknown"
+        ? baseOverallRisk
+        : getHighestSummaryRisk(baseOverallRisk, externalAnalysisRisk);
     const riskLabel = formatRisk(overallRisk);
     return `
 ${exports.SUMMARY_MARKER}
@@ -41,7 +44,7 @@ ${formatExternalAnalysis(externalAnalysis)}
 
 ## Risk Analysis
 
-${formatRiskAnalysis(overallRisk, dedupedFindings.length, providerFailures, reviewLimits)}
+${formatRiskAnalysis(overallRisk, dedupedFindings.length, providerFailures, reviewLimits, externalAnalysisRisk)}
 
 ## Suggested Next Steps
 
@@ -54,6 +57,15 @@ function getHighestRisk(findings) {
     if (findings.some((finding) => finding.risk === "medium"))
         return "medium";
     return "low";
+}
+function getHighestSummaryRisk(left, right) {
+    const priority = {
+        low: 0,
+        medium: 1,
+        high: 2,
+        unknown: 3,
+    };
+    return priority[right] > priority[left] ? right : left;
 }
 function dedupeFindings(findings) {
     const seen = new Set();
@@ -92,18 +104,23 @@ function formatKeyFindings(findings, providerFailures) {
         .map((finding) => `* \`${finding.filePath}\`: ${finding.issue}`)
         .join("\n");
 }
-function formatRiskAnalysis(risk, findingCount, providerFailures, reviewLimits) {
+function formatRiskAnalysis(risk, findingCount, providerFailures, reviewLimits, externalAnalysisRisk = "low") {
     if (risk === "unknown") {
         return "Risk is unknown because AI review could not be completed due to provider failures.";
     }
     const limitNote = hasLimitSkips(reviewLimits)
         ? " Some changed functions were skipped because review limits were reached, so review coverage was partial."
         : "";
+    const externalNote = externalAnalysisRisk === "high"
+        ? " Relevant external analysis findings overlapping changed code raised the risk to high."
+        : externalAnalysisRisk === "medium"
+            ? " Relevant external analysis findings overlapping changed code raised the risk to medium."
+            : "";
     if (providerFailures.length > 0) {
-        return `${formatBaseRiskAnalysis(risk, findingCount)} Some changed functions were not reviewed because provider calls failed.${limitNote}`;
+        return `${formatBaseRiskAnalysis(risk, findingCount)} Some changed functions were not reviewed because provider calls failed.${limitNote}${externalNote}`;
     }
-    if (limitNote) {
-        return `${formatBaseRiskAnalysis(risk, findingCount)}${limitNote}`;
+    if (limitNote || externalNote) {
+        return `${formatBaseRiskAnalysis(risk, findingCount)}${limitNote}${externalNote}`;
     }
     return formatBaseRiskAnalysis(risk, findingCount);
 }

@@ -6,8 +6,12 @@ import test from "node:test";
 
 import { mergeReviewerConfig } from "../src/config";
 import {
+  determineExternalAnalysisRisk,
+  formatExternalAnalysisEvidence,
   getFindingsForFile,
+  getFindingsForFunction,
   loadExternalAnalysisReports,
+  limitExternalAnalysisFindings,
   normalizeEslintSeverity,
   normalizeReportFilePath,
   normalizeSemgrepSeverity,
@@ -267,6 +271,126 @@ test("getFindingsForFile returns only matching findings", () => {
   ];
 
   assert.deepEqual(getFindingsForFile(findings, "./src/a.ts"), [findings[0]]);
+});
+
+test("getFindingsForFunction includes findings inside function range", () => {
+  const findings = [
+    {
+      tool: "semgrep" as const,
+      filePath: "src/a.ts",
+      line: 12,
+      endLine: 12,
+      severity: "error" as const,
+      message: "inside",
+    },
+    {
+      tool: "lint" as const,
+      filePath: "src/a.ts",
+      line: 50,
+      severity: "warning" as const,
+      message: "outside",
+    },
+  ];
+
+  assert.deepEqual(
+    getFindingsForFunction({
+      findings,
+      functionStartLine: 10,
+      functionEndLine: 20,
+    }),
+    [findings[0]],
+  );
+});
+
+test("getFindingsForFunction includes nearby and file-level findings", () => {
+  const findings = [
+    {
+      tool: "lint" as const,
+      filePath: "src/a.ts",
+      line: 8,
+      severity: "warning" as const,
+      message: "nearby",
+    },
+    {
+      tool: "tests" as const,
+      filePath: "src/a.test.ts",
+      severity: "error" as const,
+      message: "file-level",
+    },
+  ];
+
+  assert.deepEqual(
+    getFindingsForFunction({
+      findings,
+      functionStartLine: 10,
+      functionEndLine: 20,
+      proximityLines: 3,
+    }),
+    [findings[1], findings[0]],
+  );
+});
+
+test("external analysis evidence is formatted and limited", () => {
+  const findings = limitExternalAnalysisFindings(
+    [
+      {
+        tool: "lint" as const,
+        filePath: "src/a.ts",
+        line: 10,
+        severity: "warning" as const,
+        ruleId: "no-floating-promises",
+        message: "Promise should be awaited.",
+      },
+      {
+        tool: "semgrep" as const,
+        filePath: "src/a.ts",
+        line: 12,
+        severity: "error" as const,
+        ruleId: "no-hardcoded-secrets",
+        message: "Possible hardcoded secret.",
+      },
+    ],
+    1,
+  );
+
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].tool, "semgrep");
+  assert.equal(
+    formatExternalAnalysisEvidence(findings),
+    "* [semgrep:error] line 12 no-hardcoded-secrets: Possible hardcoded secret.",
+  );
+});
+
+test("external analysis risk uses only provided relevant findings", () => {
+  assert.equal(
+    determineExternalAnalysisRisk([
+      {
+        tool: "semgrep",
+        filePath: "src/a.ts",
+        severity: "error",
+        message: "security issue",
+      },
+    ]),
+    "high",
+  );
+  assert.equal(
+    determineExternalAnalysisRisk([
+      {
+        tool: "semgrep",
+        filePath: "src/other.ts",
+        severity: "warning",
+        message: "warning",
+      },
+      {
+        tool: "lint",
+        filePath: "src/a.ts",
+        severity: "error",
+        message: "lint error",
+      },
+    ]),
+    "medium",
+  );
+  assert.equal(determineExternalAnalysisRisk([]), "low");
 });
 
 test("report parsing does not crash review loading", async () => {

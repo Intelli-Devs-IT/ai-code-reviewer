@@ -9,12 +9,25 @@ exports.parseEslintReport = parseEslintReport;
 exports.parseSemgrepReport = parseSemgrepReport;
 exports.parseTestReport = parseTestReport;
 exports.getFindingsForFile = getFindingsForFile;
+exports.getFindingsForFunction = getFindingsForFunction;
+exports.limitExternalAnalysisFindings = limitExternalAnalysisFindings;
+exports.formatExternalAnalysisEvidence = formatExternalAnalysisEvidence;
+exports.countExternalFindingsByTool = countExternalFindingsByTool;
+exports.determineExternalAnalysisRisk = determineExternalAnalysisRisk;
 exports.normalizeReportFilePath = normalizeReportFilePath;
 exports.normalizeRepoPath = normalizeRepoPath;
 exports.normalizeEslintSeverity = normalizeEslintSeverity;
 exports.normalizeSemgrepSeverity = normalizeSemgrepSeverity;
 const node_fs_1 = require("node:fs");
 const node_path_1 = __importDefault(require("node:path"));
+const DEFAULT_MAX_EXTERNAL_EVIDENCE_FINDINGS = 5;
+const DEFAULT_FUNCTION_PROXIMITY_LINES = 3;
+const SEVERITY_PRIORITY = {
+    info: 0,
+    warning: 1,
+    error: 2,
+    critical: 3,
+};
 const EMPTY_SUMMARY = {
     findings: [],
     loadWarnings: [],
@@ -158,6 +171,40 @@ function getFindingsForFile(findings, filePath) {
         return normalizeRepoPath(finding.filePath) === normalizedFilePath;
     });
 }
+function getFindingsForFunction({ findings, functionStartLine, functionEndLine, maxFindings = DEFAULT_MAX_EXTERNAL_EVIDENCE_FINDINGS, proximityLines = DEFAULT_FUNCTION_PROXIMITY_LINES, }) {
+    const lowerBound = Math.max(1, functionStartLine - proximityLines);
+    const upperBound = functionEndLine + proximityLines;
+    return sortExternalFindingsBySignal(findings.filter((finding) => {
+        if (typeof finding.line !== "number") {
+            return true;
+        }
+        const findingStart = finding.line;
+        const findingEnd = finding.endLine ?? finding.line;
+        return findingEnd >= lowerBound && findingStart <= upperBound;
+    })).slice(0, maxFindings);
+}
+function limitExternalAnalysisFindings(findings, maxFindings = DEFAULT_MAX_EXTERNAL_EVIDENCE_FINDINGS) {
+    return sortExternalFindingsBySignal(findings).slice(0, maxFindings);
+}
+function formatExternalAnalysisEvidence(findings) {
+    return findings.map(formatExternalAnalysisFinding).join("\n");
+}
+function countExternalFindingsByTool(findings, tool) {
+    return findings.filter((finding) => finding.tool === tool).length;
+}
+function determineExternalAnalysisRisk(findings) {
+    if (findings.some((finding) => finding.tool === "semgrep" &&
+        (finding.severity === "critical" || finding.severity === "error"))) {
+        return "high";
+    }
+    if (findings.some((finding) => finding.tool === "tests" && finding.severity === "error")) {
+        return "medium";
+    }
+    if (findings.some((finding) => finding.tool === "lint" && finding.severity === "error")) {
+        return "medium";
+    }
+    return "low";
+}
 function normalizeReportFilePath(filePath, workspaceRoot) {
     const normalizedRoot = normalizeRepoPath(node_path_1.default.resolve(workspaceRoot));
     const resolvedPath = node_path_1.default.isAbsolute(filePath)
@@ -179,6 +226,24 @@ function normalizeEslintSeverity(value) {
     if (value === 2)
         return "error";
     return "info";
+}
+function sortExternalFindingsBySignal(findings) {
+    return [...findings].sort((left, right) => {
+        const severityDelta = SEVERITY_PRIORITY[right.severity] - SEVERITY_PRIORITY[left.severity];
+        if (severityDelta !== 0) {
+            return severityDelta;
+        }
+        return (left.line ?? Number.MAX_SAFE_INTEGER) -
+            (right.line ?? Number.MAX_SAFE_INTEGER);
+    });
+}
+function formatExternalAnalysisFinding(finding) {
+    const location = typeof finding.line === "number"
+        ? `line ${finding.line}`
+        : finding.filePath ?? "file-level";
+    const rule = finding.ruleId ? ` ${finding.ruleId}` : "";
+    const message = finding.message.replace(/\s+/g, " ").trim().slice(0, 220);
+    return `* [${finding.tool}:${finding.severity}] ${location}${rule}: ${message}`;
 }
 function normalizeSemgrepSeverity(value) {
     if (typeof value !== "string") {

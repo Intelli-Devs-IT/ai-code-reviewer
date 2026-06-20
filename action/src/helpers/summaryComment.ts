@@ -26,6 +26,7 @@ export interface SummaryBodyOptions {
   providerFailureBehavior?: "warn" | "fail" | "skip";
   reviewLimits?: ReviewLimitState;
   externalAnalysis?: ExternalAnalysisSummary;
+  externalAnalysisRisk?: SummaryRiskLevel;
 }
 
 export function createSummaryFinding({
@@ -54,12 +55,16 @@ export function buildSummaryBody({
   providerFailureBehavior = "warn",
   reviewLimits,
   externalAnalysis,
+  externalAnalysisRisk = "low",
 }: SummaryBodyOptions): string {
   const dedupedFindings = dedupeFindings(findings);
-  const overallRisk =
+  const baseOverallRisk =
     reviewedFilePaths.size === 0 && providerFailures.length > 0
       ? "unknown"
       : getHighestRisk(dedupedFindings);
+  const overallRisk = baseOverallRisk === "unknown"
+    ? baseOverallRisk
+    : getHighestSummaryRisk(baseOverallRisk, externalAnalysisRisk);
   const riskLabel = formatRisk(overallRisk);
 
   return `
@@ -82,7 +87,7 @@ ${formatExternalAnalysis(externalAnalysis)}
 
 ## Risk Analysis
 
-${formatRiskAnalysis(overallRisk, dedupedFindings.length, providerFailures, reviewLimits)}
+${formatRiskAnalysis(overallRisk, dedupedFindings.length, providerFailures, reviewLimits, externalAnalysisRisk)}
 
 ## Suggested Next Steps
 
@@ -95,6 +100,20 @@ export function getHighestRisk(findings: SummaryFinding[]): SummaryRiskLevel {
   if (findings.some((finding) => finding.risk === "medium")) return "medium";
 
   return "low";
+}
+
+function getHighestSummaryRisk(
+  left: SummaryRiskLevel,
+  right: SummaryRiskLevel
+): SummaryRiskLevel {
+  const priority: Record<SummaryRiskLevel, number> = {
+    low: 0,
+    medium: 1,
+    high: 2,
+    unknown: 3,
+  };
+
+  return priority[right] > priority[left] ? right : left;
 }
 
 export function dedupeFindings(findings: SummaryFinding[]): SummaryFinding[] {
@@ -151,7 +170,8 @@ function formatRiskAnalysis(
   risk: SummaryRiskLevel,
   findingCount: number,
   providerFailures: ProviderFailure[],
-  reviewLimits?: ReviewLimitState
+  reviewLimits?: ReviewLimitState,
+  externalAnalysisRisk: SummaryRiskLevel = "low"
 ): string {
   if (risk === "unknown") {
     return "Risk is unknown because AI review could not be completed due to provider failures.";
@@ -160,16 +180,21 @@ function formatRiskAnalysis(
   const limitNote = hasLimitSkips(reviewLimits)
     ? " Some changed functions were skipped because review limits were reached, so review coverage was partial."
     : "";
+  const externalNote = externalAnalysisRisk === "high"
+    ? " Relevant external analysis findings overlapping changed code raised the risk to high."
+    : externalAnalysisRisk === "medium"
+      ? " Relevant external analysis findings overlapping changed code raised the risk to medium."
+      : "";
 
   if (providerFailures.length > 0) {
     return `${formatBaseRiskAnalysis(
       risk,
       findingCount
-    )} Some changed functions were not reviewed because provider calls failed.${limitNote}`;
+    )} Some changed functions were not reviewed because provider calls failed.${limitNote}${externalNote}`;
   }
 
-  if (limitNote) {
-    return `${formatBaseRiskAnalysis(risk, findingCount)}${limitNote}`;
+  if (limitNote || externalNote) {
+    return `${formatBaseRiskAnalysis(risk, findingCount)}${limitNote}${externalNote}`;
   }
 
   return formatBaseRiskAnalysis(risk, findingCount);

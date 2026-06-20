@@ -296,6 +296,13 @@ async function run() {
             workspaceRoot: process.env.GITHUB_WORKSPACE ?? process.cwd(),
             logger: core,
         });
+        core.info([
+            "External analysis loaded:",
+            `lintFindings=${(0, externalAnalysis_1.countExternalFindingsByTool)(externalAnalysis.findings, "lint")}`,
+            `semgrepFindings=${(0, externalAnalysis_1.countExternalFindingsByTool)(externalAnalysis.findings, "semgrep")}`,
+            `testFindings=${(0, externalAnalysis_1.countExternalFindingsByTool)(externalAnalysis.findings, "tests")}`,
+            `warnings=${externalAnalysis.loadWarnings.length}`,
+        ].join("\n"));
         /* =======================
            Init LLM (optional)
            ======================= */
@@ -392,6 +399,7 @@ async function run() {
         const summaryFindings = [];
         const providerFailures = [];
         let highestAcceptedFindingRisk = "low";
+        let highestExternalAnalysisRisk = "low";
         const labelMap = {
             low: {
                 name: "ai-review: low-risk",
@@ -430,6 +438,7 @@ async function run() {
                     config,
                 })
                 : undefined;
+            const fileExternalFindings = (0, externalAnalysis_1.getFindingsForFile)(externalAnalysis.findings, file.filename);
             let attemptedFunctionsForFile = 0;
             core.info([
                 "Using provider model:",
@@ -500,6 +509,21 @@ async function run() {
                         continue;
                     }
                     const reviewContext = (0, functionReviewTargets_1.getFunctionReviewContext)(target.fn, changedLines);
+                    const externalEvidenceFindings = (0, externalAnalysis_1.getFindingsForFunction)({
+                        findings: fileExternalFindings,
+                        functionStartLine: target.fn.startLine,
+                        functionEndLine: target.fn.endLine,
+                    });
+                    const externalAnalysisEvidence = (0, externalAnalysis_1.formatExternalAnalysisEvidence)(externalEvidenceFindings);
+                    if (externalEvidenceFindings.length > 0) {
+                        highestExternalAnalysisRisk = (0, riskLevel_1.getHighestRiskLevel)(highestExternalAnalysisRisk, (0, externalAnalysis_1.determineExternalAnalysisRisk)(externalEvidenceFindings));
+                        core.info([
+                            "External evidence for function:",
+                            `file=${file.filename}`,
+                            `function=${target.fn.name}`,
+                            `evidenceCount=${externalEvidenceFindings.length}`,
+                        ].join("\n"));
+                    }
                     core.debug(`Posting inline comment for ${file.filename} at line ${target.commentLine}`);
                     const prompt = (0, reviewPrompt_1.buildChangedFunctionReviewPrompt)({
                         functionText: reviewContext.focusedText,
@@ -507,6 +531,7 @@ async function run() {
                         isFocusedContext: reviewContext.isFocused,
                         securityReviewEnabled,
                         reviewStrictness,
+                        externalAnalysisEvidence,
                     });
                     let raw;
                     let reviewProviderName = primaryProviderName;
@@ -697,12 +722,23 @@ async function run() {
             core.debug(`Posting inline comment for ${file.filename} at line ${targetLine}`);
             const scopedPatch = (0, extractScopedPatch_1.extractScopedPatch)(patch, targetLine);
             core.debug(`Scoped Patch:\n${scopedPatch}`);
+            const scopedExternalEvidenceFindings = (0, externalAnalysis_1.limitExternalAnalysisFindings)(fileExternalFindings);
+            const scopedExternalAnalysisEvidence = (0, externalAnalysis_1.formatExternalAnalysisEvidence)(scopedExternalEvidenceFindings);
+            if (scopedExternalEvidenceFindings.length > 0) {
+                highestExternalAnalysisRisk = (0, riskLevel_1.getHighestRiskLevel)(highestExternalAnalysisRisk, (0, externalAnalysis_1.determineExternalAnalysisRisk)(scopedExternalEvidenceFindings));
+                core.info([
+                    "External evidence for scoped review:",
+                    `file=${file.filename}`,
+                    `evidenceCount=${scopedExternalEvidenceFindings.length}`,
+                ].join("\n"));
+            }
             const prompt = (0, reviewPrompt_1.buildScopedReviewPrompt)({
                 fileName: file.filename,
                 targetLine,
                 scopedPatch,
                 securityReviewEnabled,
                 reviewStrictness,
+                externalAnalysisEvidence: scopedExternalAnalysisEvidence,
             });
             let raw;
             let reviewProviderName = primaryProviderName;
@@ -842,13 +878,14 @@ async function run() {
                 providerFailureBehavior,
                 reviewLimits: reviewLimitState,
                 externalAnalysis,
+                externalAnalysisRisk: highestExternalAnalysisRisk,
             }));
             if ((0, providerFailures_1.shouldFailForProviderFailures)(providerFailureBehavior, providerFailures)) {
                 core.setFailed("AI review could not be completed because provider calls failed.");
             }
             return;
         }
-        const finalRisk = highestAcceptedFindingRisk;
+        const finalRisk = (0, riskLevel_1.getHighestRiskLevel)(highestAcceptedFindingRisk, highestExternalAnalysisRisk);
         const selected = labelMap[finalRisk];
         await ensureLabel(octokit, owner, repo, selected.name, selected.color, selected.description);
         await (0, riskLabels_1.applyRiskLabel)(octokit, owner, repo, pr.number, selected.name, riskLabels, core);
@@ -863,6 +900,7 @@ async function run() {
                 providerFailureBehavior,
                 reviewLimits: reviewLimitState,
                 externalAnalysis,
+                externalAnalysisRisk: highestExternalAnalysisRisk,
             }));
             core.setFailed("🚨 AI review detected HIGH-RISK issues. Add 'ai-review: override' to bypass.");
             return;
@@ -877,6 +915,7 @@ async function run() {
             providerFailureBehavior,
             reviewLimits: reviewLimitState,
             externalAnalysis,
+            externalAnalysisRisk: highestExternalAnalysisRisk,
         }));
         if ((0, providerFailures_1.shouldFailForProviderFailures)(providerFailureBehavior, providerFailures)) {
             core.setFailed("AI review completed with provider failures.");

@@ -59,7 +59,15 @@ import {
   recordFunctionReviewAttempt,
   recordReviewLimitSkip,
 } from "./helpers/reviewLimits";
-import { loadExternalAnalysisReports } from "./helpers/externalAnalysis";
+import {
+  countExternalFindingsByTool,
+  determineExternalAnalysisRisk,
+  formatExternalAnalysisEvidence,
+  getFindingsForFile,
+  getFindingsForFunction,
+  limitExternalAnalysisFindings,
+  loadExternalAnalysisReports,
+} from "./helpers/externalAnalysis";
 
 /* =======================
    Helpers: file filtering
@@ -392,6 +400,15 @@ async function run() {
       workspaceRoot: process.env.GITHUB_WORKSPACE ?? process.cwd(),
       logger: core,
     });
+    core.info(
+      [
+        "External analysis loaded:",
+        `lintFindings=${countExternalFindingsByTool(externalAnalysis.findings, "lint")}`,
+        `semgrepFindings=${countExternalFindingsByTool(externalAnalysis.findings, "semgrep")}`,
+        `testFindings=${countExternalFindingsByTool(externalAnalysis.findings, "tests")}`,
+        `warnings=${externalAnalysis.loadWarnings.length}`,
+      ].join("\n")
+    );
 
     /* =======================
        Init LLM (optional)
@@ -516,6 +533,7 @@ async function run() {
     const summaryFindings: SummaryFinding[] = [];
     const providerFailures: ProviderFailure[] = [];
     let highestAcceptedFindingRisk: RiskLevel = "low";
+    let highestExternalAnalysisRisk: RiskLevel = "low";
 
     interface LabelConfig {
       name: string;
@@ -564,6 +582,10 @@ async function run() {
               config,
             })
           : undefined;
+        const fileExternalFindings = getFindingsForFile(
+          externalAnalysis.findings,
+          file.filename
+        );
         let attemptedFunctionsForFile = 0;
 
         core.info(
@@ -655,6 +677,29 @@ async function run() {
               target.fn,
               changedLines
             );
+            const externalEvidenceFindings = getFindingsForFunction({
+              findings: fileExternalFindings,
+              functionStartLine: target.fn.startLine,
+              functionEndLine: target.fn.endLine,
+            });
+            const externalAnalysisEvidence = formatExternalAnalysisEvidence(
+              externalEvidenceFindings
+            );
+
+            if (externalEvidenceFindings.length > 0) {
+              highestExternalAnalysisRisk = getHighestRiskLevel(
+                highestExternalAnalysisRisk,
+                determineExternalAnalysisRisk(externalEvidenceFindings)
+              );
+              core.info(
+                [
+                  "External evidence for function:",
+                  `file=${file.filename}`,
+                  `function=${target.fn.name}`,
+                  `evidenceCount=${externalEvidenceFindings.length}`,
+                ].join("\n")
+              );
+            }
 
             core.debug(
               `Posting inline comment for ${file.filename} at line ${target.commentLine}`
@@ -666,6 +711,7 @@ async function run() {
               isFocusedContext: reviewContext.isFocused,
               securityReviewEnabled,
               reviewStrictness,
+              externalAnalysisEvidence,
             });
 
             let raw: string | null;
@@ -890,6 +936,25 @@ async function run() {
 
         const scopedPatch = extractScopedPatch(patch, targetLine);
         core.debug(`Scoped Patch:\n${scopedPatch}`);
+        const scopedExternalEvidenceFindings =
+          limitExternalAnalysisFindings(fileExternalFindings);
+        const scopedExternalAnalysisEvidence = formatExternalAnalysisEvidence(
+          scopedExternalEvidenceFindings
+        );
+
+        if (scopedExternalEvidenceFindings.length > 0) {
+          highestExternalAnalysisRisk = getHighestRiskLevel(
+            highestExternalAnalysisRisk,
+            determineExternalAnalysisRisk(scopedExternalEvidenceFindings)
+          );
+          core.info(
+            [
+              "External evidence for scoped review:",
+              `file=${file.filename}`,
+              `evidenceCount=${scopedExternalEvidenceFindings.length}`,
+            ].join("\n")
+          );
+        }
 
         const prompt = buildScopedReviewPrompt({
           fileName: file.filename,
@@ -897,6 +962,7 @@ async function run() {
           scopedPatch,
           securityReviewEnabled,
           reviewStrictness,
+          externalAnalysisEvidence: scopedExternalAnalysisEvidence,
         });
 
         let raw: string | null;
@@ -1063,6 +1129,7 @@ async function run() {
           providerFailureBehavior,
           reviewLimits: reviewLimitState,
           externalAnalysis,
+          externalAnalysisRisk: highestExternalAnalysisRisk,
         })
       );
 
@@ -1077,7 +1144,10 @@ async function run() {
       return;
     }
 
-    const finalRisk = highestAcceptedFindingRisk;
+    const finalRisk = getHighestRiskLevel(
+      highestAcceptedFindingRisk,
+      highestExternalAnalysisRisk
+    );
     const selected = labelMap[finalRisk];
 
     await ensureLabel(
@@ -1117,6 +1187,7 @@ async function run() {
           providerFailureBehavior,
           reviewLimits: reviewLimitState,
           externalAnalysis,
+          externalAnalysisRisk: highestExternalAnalysisRisk,
         })
       );
 
@@ -1142,6 +1213,7 @@ async function run() {
         providerFailureBehavior,
         reviewLimits: reviewLimitState,
         externalAnalysis,
+        externalAnalysisRisk: highestExternalAnalysisRisk,
       })
     );
 

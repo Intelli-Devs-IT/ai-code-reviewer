@@ -90,3 +90,27 @@ test("accepted inline findings are counted for inline comment limits", () => {
   assert.match(INDEX_SOURCE, /recordAcceptedInlineComment/);
   assert.match(INDEX_SOURCE, /getInlineCommentLimitSkip/);
 });
+
+test("external analysis reports are loaded once per review run", () => {
+  const loadMatches = INDEX_SOURCE.match(/loadExternalAnalysisReports/g);
+
+  assert.equal(loadMatches?.length, 2);
+  assert.match(INDEX_SOURCE, /const externalAnalysis = await loadExternalAnalysisReports/);
+});
+
+test("external findings are correlated before prompt construction", () => {
+  assert.match(INDEX_SOURCE, /getFindingsForFile/);
+  assert.match(INDEX_SOURCE, /getFindingsForFunction/);
+  assert.match(
+    INDEX_SOURCE,
+    /externalAnalysisEvidence[\s\S]*?buildChangedFunctionReviewPrompt/
+  );
+});
+
+test("external analysis risk contributes to final risk", () => {
+  assert.match(INDEX_SOURCE, /highestExternalAnalysisRisk/);
+  assert.match(
+    INDEX_SOURCE,
+    /const finalRisk = getHighestRiskLevel\(\s*highestAcceptedFindingRisk,\s*highestExternalAnalysisRisk\s*\)/
+  );
+});

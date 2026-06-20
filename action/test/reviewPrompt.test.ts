@@ -143,3 +143,29 @@ test("focused large-function prompt explains excerpt limitations", () => {
   assert.match(prompt, /focused excerpt from a larger function/);
   assert.match(prompt, /Do not assume unseen code/);
 });
+
+test("prompt includes external analysis evidence when available", () => {
+  const prompt = buildChangedFunctionReviewPrompt({
+    functionText: "function login() { return true; }",
+    patch: "@@ -1 +1 @@",
+    isFocusedContext: false,
+    externalAnalysisEvidence:
+      "* [semgrep:error] line 42 no-hardcoded-secrets: Possible hardcoded secret.",
+  });
+
+  assert.match(prompt, /External Analysis Evidence:/);
+  assert.match(prompt, /\[semgrep:error\] line 42/);
+  assert.match(prompt, /supporting evidence, not automatic truth/);
+  assert.match(prompt, /Do not repeat tool output blindly/);
+  assert.match(prompt, /Still return NO_REVIEW/);
+});
+
+test("prompt omits external analysis evidence when none exists", () => {
+  const prompt = buildChangedFunctionReviewPrompt({
+    functionText: "function login() { return true; }",
+    patch: "@@ -1 +1 @@",
+    isFocusedContext: false,
+  });
+
+  assert.doesNotMatch(prompt, /External Analysis Evidence:/);
+});

@@ -7,7 +7,7 @@
 3. Diff and changed line extraction
 4. Config loading from `.ai-reviewer.yml`
 5. File include/exclude filtering
-6. Optional external analysis report loading and normalization
+6. Optional external analysis report loading, normalization, and correlation
 7. AST-based function extraction
 8. Changed-function matching
 9. LLM review generation
@@ -37,6 +37,8 @@ Load Config
 Fetch Changed Files
 ↓
 Load Optional External Analysis Reports
+↓
+Correlate External Findings With Changed Files/Functions
 ↓
 Extract Patch + Changed Lines
 ↓
@@ -70,9 +72,9 @@ Apply Risk Label
 ↓
 Block Merge if High Risk
 
-## Future Architecture: External Analysis Signals
+## External Analysis Signals
 
-This is planned future architecture, not current runtime behavior.
+Report loading, file/function correlation, capped prompt evidence, summary counts, and risk context are current runtime behavior. Deeper evidence-driven summary actions remain future work.
 
 Pull Request
 ->
@@ -100,7 +102,7 @@ Merge Blocking
 * The compiled action entrypoint is `action/dist/index.js`.
 * Config loading lives in `action/src/load-config.ts`.
 * Full file source fetching lives in `action/src/helpers/fileSourceFetcher.ts` and uses cached Git tree/blob API calls for PR head content.
-* External analysis report loading and parsing lives in `action/src/helpers/externalAnalysis.ts`.
+* External analysis report loading, parsing, correlation, evidence formatting, and external-risk helpers live in `action/src/helpers/externalAnalysis.ts`.
 * Inline review prompt formatting lives in `action/src/helpers/reviewPrompt.ts`.
 * Review cost and noise limit tracking lives in `action/src/helpers/reviewLimits.ts`.
 * Provider response validation lives in `action/src/helpers/modelResponseValidation.ts`.
@@ -127,6 +129,7 @@ Merge Blocking
 * Review strictness is configurable and defaults to balanced behavior.
 * Review limits cap inline comments, changed functions per file, and changed functions across the PR run.
 * External lint, Semgrep, and test reports are optional and config-driven. Missing or invalid reports should warn and continue.
+* External analysis findings may be used as capped supporting evidence in prompts, but they are not posted blindly as inline comments.
 * Security review mode is opt-in through `.ai-reviewer.yml` and should not change default prompt behavior when disabled.
 * Model routing is opt-in through `.ai-reviewer.yml` and should preserve provider-specific default models when disabled.
 * Model validation defaults to warning on untested configured models; strict mode can require tested models only, and off mode supports advanced custom/private model usage.
@@ -139,7 +142,7 @@ Merge Blocking
 * If AST extraction fails or returns no functions, the old scoped diff fallback can be used.
 * Summary comment should be single and updated on reruns.
 * Summary comments should mention partial AI review coverage when configured review limits skip changed functions.
-* Summary comments may include external analysis report counts, but external findings are not posted as inline comments yet.
+* Summary comments may include external analysis report counts and risk notes when relevant findings overlap changed code.
 * Risk labels must be handled safely.
 * Missing labels must not crash the workflow.
 * Merge blocking should only happen for high-risk issues.

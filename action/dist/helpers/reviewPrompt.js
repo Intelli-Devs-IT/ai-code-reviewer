@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildChangedFunctionReviewPrompt = buildChangedFunctionReviewPrompt;
 exports.buildScopedReviewPrompt = buildScopedReviewPrompt;
-function buildChangedFunctionReviewPrompt({ functionText, patch, isFocusedContext, securityReviewEnabled = false, reviewStrictness = "balanced", }) {
+function buildChangedFunctionReviewPrompt({ functionText, patch, isFocusedContext, securityReviewEnabled = false, reviewStrictness = "balanced", externalAnalysisEvidence, }) {
     return `
 You are a senior code reviewer.
 
@@ -23,9 +23,11 @@ Relevant patch:
 \`\`\`diff
 ${patch}
 \`\`\`
+
+${buildExternalAnalysisEvidenceSection(externalAnalysisEvidence)}
 `;
 }
-function buildScopedReviewPrompt({ fileName, targetLine, scopedPatch, securityReviewEnabled = false, reviewStrictness = "balanced", }) {
+function buildScopedReviewPrompt({ fileName, targetLine, scopedPatch, securityReviewEnabled = false, reviewStrictness = "balanced", externalAnalysisEvidence, }) {
     return `
 You are a senior code reviewer.
 
@@ -38,6 +40,8 @@ Review starting at line: ${targetLine}
 
 Diff:
 ${scopedPatch}
+
+${buildExternalAnalysisEvidenceSection(externalAnalysisEvidence)}
 `;
 }
 function buildReviewRules(securityReviewEnabled, reviewStrictness, reviewedScope) {
@@ -98,4 +102,19 @@ function buildStrictnessRules(reviewStrictness) {
     return `Review strictness: balanced.
 - Use the default review bar: report meaningful bugs, edge cases, security issues, and serious maintainability issues while avoiding noisy comments.
 `;
+}
+function buildExternalAnalysisEvidenceSection(externalAnalysisEvidence) {
+    if (!externalAnalysisEvidence?.trim()) {
+        return "";
+    }
+    return `External Analysis Evidence:
+${externalAnalysisEvidence}
+
+External evidence rules:
+- Treat external analysis findings as supporting evidence, not automatic truth.
+- Prioritize evidence that overlaps the changed function or scoped diff.
+- Do not repeat tool output blindly.
+- Only comment if the evidence indicates a real issue in the changed code.
+- If a tool finding is unrelated or a false positive, ignore it.
+- Still return NO_REVIEW if there is no meaningful issue.`;
 }

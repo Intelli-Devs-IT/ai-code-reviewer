@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { ReviewerConfig } from "../config";
+import { RiskLevel } from "./riskLevel";
 
 export type AnalysisTool = "lint" | "semgrep" | "tests";
 export type AnalysisSeverity = "info" | "warning" | "error" | "critical";
@@ -20,6 +21,23 @@ export interface ExternalAnalysisSummary {
   findings: ExternalAnalysisFinding[];
   loadWarnings: string[];
 }
+
+export interface FunctionExternalAnalysisParams {
+  findings: ExternalAnalysisFinding[];
+  functionStartLine: number;
+  functionEndLine: number;
+  maxFindings?: number;
+  proximityLines?: number;
+}
+
+const DEFAULT_MAX_EXTERNAL_EVIDENCE_FINDINGS = 5;
+const DEFAULT_FUNCTION_PROXIMITY_LINES = 3;
+const SEVERITY_PRIORITY: Record<AnalysisSeverity, number> = {
+  info: 0,
+  warning: 1,
+  error: 2,
+  critical: 3,
+};
 
 interface LoggerLike {
   warning(message: string): void;
@@ -231,6 +249,83 @@ export function getFindingsForFile(
   });
 }
 
+export function getFindingsForFunction({
+  findings,
+  functionStartLine,
+  functionEndLine,
+  maxFindings = DEFAULT_MAX_EXTERNAL_EVIDENCE_FINDINGS,
+  proximityLines = DEFAULT_FUNCTION_PROXIMITY_LINES,
+}: FunctionExternalAnalysisParams): ExternalAnalysisFinding[] {
+  const lowerBound = Math.max(1, functionStartLine - proximityLines);
+  const upperBound = functionEndLine + proximityLines;
+
+  return sortExternalFindingsBySignal(
+    findings.filter((finding) => {
+      if (typeof finding.line !== "number") {
+        return true;
+      }
+
+      const findingStart = finding.line;
+      const findingEnd = finding.endLine ?? finding.line;
+
+      return findingEnd >= lowerBound && findingStart <= upperBound;
+    }),
+  ).slice(0, maxFindings);
+}
+
+export function limitExternalAnalysisFindings(
+  findings: ExternalAnalysisFinding[],
+  maxFindings = DEFAULT_MAX_EXTERNAL_EVIDENCE_FINDINGS,
+): ExternalAnalysisFinding[] {
+  return sortExternalFindingsBySignal(findings).slice(0, maxFindings);
+}
+
+export function formatExternalAnalysisEvidence(
+  findings: ExternalAnalysisFinding[],
+): string {
+  return findings.map(formatExternalAnalysisFinding).join("\n");
+}
+
+export function countExternalFindingsByTool(
+  findings: ExternalAnalysisFinding[],
+  tool: AnalysisTool,
+): number {
+  return findings.filter((finding) => finding.tool === tool).length;
+}
+
+export function determineExternalAnalysisRisk(
+  findings: ExternalAnalysisFinding[],
+): RiskLevel {
+  if (
+    findings.some(
+      (finding) =>
+        finding.tool === "semgrep" &&
+        (finding.severity === "critical" || finding.severity === "error"),
+    )
+  ) {
+    return "high";
+  }
+
+  if (
+    findings.some(
+      (finding) =>
+        finding.tool === "tests" && finding.severity === "error",
+    )
+  ) {
+    return "medium";
+  }
+
+  if (
+    findings.some(
+      (finding) => finding.tool === "lint" && finding.severity === "error",
+    )
+  ) {
+    return "medium";
+  }
+
+  return "low";
+}
+
 export function normalizeReportFilePath(
   filePath: string,
   workspaceRoot: string,
@@ -260,6 +355,34 @@ export function normalizeEslintSeverity(value: unknown): AnalysisSeverity {
   if (value === 2) return "error";
 
   return "info";
+}
+
+function sortExternalFindingsBySignal(
+  findings: ExternalAnalysisFinding[],
+): ExternalAnalysisFinding[] {
+  return [...findings].sort((left, right) => {
+    const severityDelta =
+      SEVERITY_PRIORITY[right.severity] - SEVERITY_PRIORITY[left.severity];
+
+    if (severityDelta !== 0) {
+      return severityDelta;
+    }
+
+    return (left.line ?? Number.MAX_SAFE_INTEGER) -
+      (right.line ?? Number.MAX_SAFE_INTEGER);
+  });
+}
+
+function formatExternalAnalysisFinding(
+  finding: ExternalAnalysisFinding,
+): string {
+  const location = typeof finding.line === "number"
+    ? `line ${finding.line}`
+    : finding.filePath ?? "file-level";
+  const rule = finding.ruleId ? ` ${finding.ruleId}` : "";
+  const message = finding.message.replace(/\s+/g, " ").trim().slice(0, 220);
+
+  return `* [${finding.tool}:${finding.severity}] ${location}${rule}: ${message}`;
 }
 
 export function normalizeSemgrepSeverity(value: unknown): AnalysisSeverity {

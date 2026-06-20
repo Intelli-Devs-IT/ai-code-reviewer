@@ -265,6 +265,53 @@ test("summary includes external analysis counts when reports are loaded", () => 
   assert.doesNotMatch(body, /missing optional report/);
 });
 
+test("summary risk can be raised by relevant external analysis risk", () => {
+  const body = buildSummaryBody({
+    reviewedFilePaths: new Set(["src/a.ts"]),
+    findings: [],
+    externalAnalysis: {
+      findings: [
+        {
+          tool: "semgrep",
+          filePath: "src/a.ts",
+          severity: "error",
+          message: "security issue",
+        },
+      ],
+      loadWarnings: [],
+    },
+    externalAnalysisRisk: "high",
+  });
+
+  assert.match(body, /Overall Risk: High/);
+  assert.match(
+    body,
+    /Relevant external analysis findings overlapping changed code raised the risk to high\./
+  );
+});
+
+test("unrelated external analysis findings do not raise summary risk", () => {
+  const body = buildSummaryBody({
+    reviewedFilePaths: new Set(["src/a.ts"]),
+    findings: [],
+    externalAnalysis: {
+      findings: [
+        {
+          tool: "semgrep",
+          filePath: "src/other.ts",
+          severity: "error",
+          message: "unrelated",
+        },
+      ],
+      loadWarnings: [],
+    },
+    externalAnalysisRisk: "low",
+  });
+
+  assert.match(body, /Overall Risk: Low/);
+  assert.doesNotMatch(body, /raised the risk/);
+});
+
 function createFinding(
   filePath: string,
   review: string,

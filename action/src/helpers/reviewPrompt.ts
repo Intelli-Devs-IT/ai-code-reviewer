@@ -6,6 +6,7 @@ export interface ChangedFunctionPromptOptions {
   isFocusedContext: boolean;
   securityReviewEnabled?: boolean;
   reviewStrictness?: ReviewStrictness;
+  externalAnalysisEvidence?: string;
 }
 
 export interface ScopedReviewPromptOptions {
@@ -14,6 +15,7 @@ export interface ScopedReviewPromptOptions {
   scopedPatch: string;
   securityReviewEnabled?: boolean;
   reviewStrictness?: ReviewStrictness;
+  externalAnalysisEvidence?: string;
 }
 
 export function buildChangedFunctionReviewPrompt({
@@ -22,6 +24,7 @@ export function buildChangedFunctionReviewPrompt({
   isFocusedContext,
   securityReviewEnabled = false,
   reviewStrictness = "balanced",
+  externalAnalysisEvidence,
 }: ChangedFunctionPromptOptions): string {
   return `
 You are a senior code reviewer.
@@ -43,6 +46,8 @@ Relevant patch:
 \`\`\`diff
 ${patch}
 \`\`\`
+
+${buildExternalAnalysisEvidenceSection(externalAnalysisEvidence)}
 `;
 }
 
@@ -52,6 +57,7 @@ export function buildScopedReviewPrompt({
   scopedPatch,
   securityReviewEnabled = false,
   reviewStrictness = "balanced",
+  externalAnalysisEvidence,
 }: ScopedReviewPromptOptions): string {
   return `
 You are a senior code reviewer.
@@ -65,6 +71,8 @@ Review starting at line: ${targetLine}
 
 Diff:
 ${scopedPatch}
+
+${buildExternalAnalysisEvidenceSection(externalAnalysisEvidence)}
 `;
 }
 
@@ -135,4 +143,23 @@ function buildStrictnessRules(reviewStrictness: ReviewStrictness): string {
   return `Review strictness: balanced.
 - Use the default review bar: report meaningful bugs, edge cases, security issues, and serious maintainability issues while avoiding noisy comments.
 `;
+}
+
+function buildExternalAnalysisEvidenceSection(
+  externalAnalysisEvidence?: string
+): string {
+  if (!externalAnalysisEvidence?.trim()) {
+    return "";
+  }
+
+  return `External Analysis Evidence:
+${externalAnalysisEvidence}
+
+External evidence rules:
+- Treat external analysis findings as supporting evidence, not automatic truth.
+- Prioritize evidence that overlaps the changed function or scoped diff.
+- Do not repeat tool output blindly.
+- Only comment if the evidence indicates a real issue in the changed code.
+- If a tool finding is unrelated or a false positive, ignore it.
+- Still return NO_REVIEW if there is no meaningful issue.`;
 }
