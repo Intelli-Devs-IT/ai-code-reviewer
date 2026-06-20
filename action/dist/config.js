@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DEFAULT_CONFIG = exports.DEFAULT_MAX_TOTAL_FUNCTIONS = exports.DEFAULT_MAX_FUNCTIONS_PER_FILE = exports.DEFAULT_MAX_INLINE_COMMENTS = exports.DEFAULT_OPENROUTER_MODEL = exports.DEFAULT_PROVIDER_FALLBACK_ON = void 0;
+exports.DEFAULT_CONFIG = exports.DEFAULT_MAX_TOTAL_FUNCTIONS = exports.DEFAULT_MAX_FUNCTIONS_PER_FILE = exports.DEFAULT_MAX_INLINE_COMMENTS = exports.DEFAULT_OPENAI_MODEL = exports.DEFAULT_OPENROUTER_MODEL = exports.DEFAULT_PROVIDER_FALLBACK_ON = void 0;
 exports.mergeReviewerConfig = mergeReviewerConfig;
 exports.normalizeReviewStrictness = normalizeReviewStrictness;
 exports.normalizeModelValidationMode = normalizeModelValidationMode;
@@ -18,6 +18,7 @@ exports.DEFAULT_PROVIDER_FALLBACK_ON = [
     "network_error",
 ];
 exports.DEFAULT_OPENROUTER_MODEL = "cohere/north-mini-code:free";
+exports.DEFAULT_OPENAI_MODEL = "gpt-4.1-mini";
 exports.DEFAULT_MAX_INLINE_COMMENTS = 10;
 exports.DEFAULT_MAX_FUNCTIONS_PER_FILE = 5;
 exports.DEFAULT_MAX_TOTAL_FUNCTIONS = 30;
@@ -47,6 +48,9 @@ exports.DEFAULT_CONFIG = {
     },
     openrouter: {
         default_model: exports.DEFAULT_OPENROUTER_MODEL,
+    },
+    openai: {
+        default_model: exports.DEFAULT_OPENAI_MODEL,
     },
     analysis: {
         lint: {
@@ -120,6 +124,10 @@ function mergeReviewerConfig(config = {}) {
             ...exports.DEFAULT_CONFIG.openrouter,
             ...(config.openrouter ?? {}),
         },
+        openai: {
+            ...exports.DEFAULT_CONFIG.openai,
+            ...(config.openai ?? {}),
+        },
         analysis: {
             lint: {
                 ...exports.DEFAULT_CONFIG.analysis?.lint,
@@ -159,13 +167,13 @@ function normalizeProviderFailureBehavior(value) {
     return "warn";
 }
 function normalizeLlmProviderName(value, fallback) {
-    if (value === "huggingface" || value === "openrouter") {
+    if (value === "huggingface" || value === "openrouter" || value === "openai") {
         return value;
     }
     return fallback;
 }
 function normalizeOptionalLlmProviderName(value) {
-    if (value === "huggingface" || value === "openrouter") {
+    if (value === "huggingface" || value === "openrouter" || value === "openai") {
         return value;
     }
     return undefined;

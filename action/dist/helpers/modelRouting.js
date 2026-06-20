@@ -52,6 +52,9 @@ function resolveModelForProviderFile(params) {
     if (params.provider === "openrouter") {
         return params.config.openrouter?.default_model || config_1.DEFAULT_OPENROUTER_MODEL;
     }
+    if (params.provider === "openai") {
+        return params.config.openai?.default_model || config_1.DEFAULT_OPENAI_MODEL;
+    }
     return resolveModelForFile({
         filePath: params.filePath,
         config: params.config,

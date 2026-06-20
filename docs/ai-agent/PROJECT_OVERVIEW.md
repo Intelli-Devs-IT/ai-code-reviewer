@@ -51,7 +51,7 @@ Model validation can be configured with `model_validation.mode`. It defaults to 
 
 Provider failure handling can be configured with `provider_failures.behavior`. It defaults to `warn`, which continues the workflow and includes provider failures in the summary. Use `fail` to fail the workflow when provider calls fail, or `skip` to keep failure details concise while avoiding misleading review summaries.
 
-Hugging Face remains the default primary LLM provider. OpenRouter can be configured as either a primary or fallback provider with `providers.primary: openrouter` or `providers.fallback: openrouter` and `OPENROUTER_API_KEY`. Provider-specific defaults are kept separate so Hugging Face model names are not used for OpenRouter calls.
+Hugging Face remains the default primary LLM provider. OpenRouter and OpenAI can be configured as either primary or fallback providers with `providers.primary` or `providers.fallback`. OpenRouter uses `OPENROUTER_API_KEY`; OpenAI uses `OPENAI_API_KEY`. Provider-specific defaults are kept separate so model names are not reused across providers.
 
 Optional external analysis report loading can be enabled with `analysis.lint`, `analysis.semgrep`, and `analysis.tests`. The action can load and normalize existing JSON report files, correlate findings with changed files/functions, and include a capped evidence section in inline review prompts. It does not run those tools directly and does not post tool findings blindly as comments.
 
@@ -104,6 +104,9 @@ providers:
 
 openrouter:
   default_model: cohere/north-mini-code:free
+
+openai:
+  default_model: gpt-4.1-mini
 
 analysis:
   lint:

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { mergeReviewerConfig } from "../src/config";
 import {
+  DEFAULT_OPENAI_MODEL,
   DEFAULT_OPENROUTER_MODEL,
 } from "../src/config";
 import { DEFAULT_HUGGINGFACE_MODEL } from "../src/helpers/huggingFaceModels";
@@ -89,6 +90,50 @@ test("OpenRouter provider falls back to DEFAULT_OPENROUTER_MODEL", () => {
       config,
     }),
     DEFAULT_OPENROUTER_MODEL
+  );
+});
+
+test("OpenAI provider uses openai.default_model when routing is disabled", () => {
+  const config = mergeReviewerConfig({
+    providers: {
+      primary: "openai",
+    },
+    model_routing: {
+      enabled: false,
+      default_model: "hf/routed-default",
+    },
+    openai: {
+      default_model: "gpt-4.1-mini",
+    },
+  });
+
+  assert.equal(
+    resolveModelForProviderFile({
+      provider: "openai",
+      filePath: "src/app.ts",
+      config,
+    }),
+    "gpt-4.1-mini"
+  );
+});
+
+test("OpenAI provider falls back to DEFAULT_OPENAI_MODEL", () => {
+  const config = mergeReviewerConfig({
+    providers: {
+      primary: "openai",
+    },
+    openai: {
+      default_model: undefined,
+    },
+  });
+
+  assert.equal(
+    resolveModelForProviderFile({
+      provider: "openai",
+      filePath: "src/app.ts",
+      config,
+    }),
+    DEFAULT_OPENAI_MODEL
   );
 });
 

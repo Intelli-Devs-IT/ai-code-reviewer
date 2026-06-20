@@ -37,6 +37,7 @@ const core = __importStar(require("@actions/core"));
 const github = __importStar(require("@actions/github"));
 const config_1 = require("./config");
 const llm_huggingface_1 = require("./llm.huggingface");
+const llm_openai_1 = require("./llm.openai");
 const llm_openrouter_1 = require("./llm.openrouter");
 const load_config_1 = require("./load-config");
 const extractScopedPatch_1 = require("./helpers/extractScopedPatch");
@@ -241,12 +242,23 @@ async function upsertSummaryComment(octokit, owner, repo, issueNumber, body) {
     }
 }
 function getProviderApiKeyEnvVar(provider) {
+    if (provider === "openai") {
+        return "OPENAI_API_KEY";
+    }
     return provider === "openrouter" ? "OPENROUTER_API_KEY" : "HF_API_KEY";
 }
 function getProviderDisplayName(provider) {
+    if (provider === "openai") {
+        return "OpenAI";
+    }
     return provider === "openrouter" ? "OpenRouter" : "Hugging Face";
 }
 function createConfiguredProvider(params) {
+    if (params.provider === "openai") {
+        return params.openAIKey
+            ? new llm_openai_1.OpenAIProvider(params.openAIKey, fetch)
+            : null;
+    }
     if (params.provider === "openrouter") {
         return params.openRouterKey
             ? new llm_openrouter_1.OpenRouterProvider(params.openRouterKey, fetch, params.referer)
@@ -308,11 +320,13 @@ async function run() {
            ======================= */
         const hfKey = process.env.HF_API_KEY;
         const openRouterKey = process.env.OPENROUTER_API_KEY;
+        const openAIKey = process.env.OPENAI_API_KEY;
         const providerReferer = `${process.env.GITHUB_SERVER_URL ?? "https://github.com"}/${owner}/${repo}`;
         let primaryProvider = createConfiguredProvider({
             provider: primaryProviderName,
             hfKey,
             openRouterKey,
+            openAIKey,
             referer: providerReferer,
         });
         const fallbackProvider = fallbackProviderName
@@ -320,6 +334,7 @@ async function run() {
                 provider: fallbackProviderName,
                 hfKey,
                 openRouterKey,
+                openAIKey,
                 referer: providerReferer,
             }) ?? undefined
             : undefined;

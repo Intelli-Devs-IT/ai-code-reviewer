@@ -35,6 +35,19 @@ test("OpenRouter auth statuses are classified as auth_failed", () => {
   assert.equal(classifyProviderError({ status: 403 }), "auth_failed");
 });
 
+test("OpenAI auth statuses are classified as auth_failed", () => {
+  assert.equal(classifyProviderError({ status: 401 }), "auth_failed");
+  assert.equal(classifyProviderError({ status: 403 }), "auth_failed");
+});
+
+test("OpenAI rate limit status is classified as rate_limited", () => {
+  assert.equal(classifyProviderError({ status: 429 }), "rate_limited");
+});
+
+test("OpenAI missing model status is classified as model_unavailable", () => {
+  assert.equal(classifyProviderError({ status: 404 }), "model_unavailable");
+});
+
 test("OpenRouter rate limit statuses are classified as rate_limited", () => {
   assert.equal(classifyProviderError({ status: 408 }), "rate_limited");
   assert.equal(classifyProviderError({ status: 429 }), "rate_limited");

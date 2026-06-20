@@ -1,4 +1,5 @@
 import {
+  DEFAULT_OPENAI_MODEL,
   DEFAULT_OPENROUTER_MODEL,
   LlmProviderName,
   ModelRoutingLanguage,
@@ -79,6 +80,10 @@ export function resolveModelForProviderFile(params: {
 }): string {
   if (params.provider === "openrouter") {
     return params.config.openrouter?.default_model || DEFAULT_OPENROUTER_MODEL;
+  }
+
+  if (params.provider === "openai") {
+    return params.config.openai?.default_model || DEFAULT_OPENAI_MODEL;
   }
 
   return resolveModelForFile({

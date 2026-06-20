@@ -3,7 +3,7 @@ import type { ProviderFailureType } from "./helpers/providerFailures";
 export type ReviewStrictness = "lenient" | "balanced" | "strict";
 export type ModelValidationMode = "strict" | "warn" | "off";
 export type ProviderFailureBehavior = "warn" | "fail" | "skip";
-export type LlmProviderName = "huggingface" | "openrouter";
+export type LlmProviderName = "huggingface" | "openrouter" | "openai";
 export type PrimaryLlmProviderName = LlmProviderName;
 export type FallbackLlmProviderName = LlmProviderName;
 export type ModelRoutingLanguage =
@@ -46,6 +46,9 @@ export interface ReviewerConfig {
   openrouter?: {
     default_model?: string;
   };
+  openai?: {
+    default_model?: string;
+  };
   analysis?: {
     lint?: {
       enabled?: boolean;
@@ -74,6 +77,7 @@ export const DEFAULT_PROVIDER_FALLBACK_ON: ProviderFailureType[] = [
 ];
 
 export const DEFAULT_OPENROUTER_MODEL = "cohere/north-mini-code:free";
+export const DEFAULT_OPENAI_MODEL = "gpt-4.1-mini";
 export const DEFAULT_MAX_INLINE_COMMENTS = 10;
 export const DEFAULT_MAX_FUNCTIONS_PER_FILE = 5;
 export const DEFAULT_MAX_TOTAL_FUNCTIONS = 30;
@@ -104,6 +108,9 @@ export const DEFAULT_CONFIG: ReviewerConfig = {
   },
   openrouter: {
     default_model: DEFAULT_OPENROUTER_MODEL,
+  },
+  openai: {
+    default_model: DEFAULT_OPENAI_MODEL,
   },
   analysis: {
     lint: {
@@ -199,6 +206,10 @@ export function mergeReviewerConfig(
       ...DEFAULT_CONFIG.openrouter,
       ...(config.openrouter ?? {}),
     },
+    openai: {
+      ...DEFAULT_CONFIG.openai,
+      ...(config.openai ?? {}),
+    },
     analysis: {
       lint: {
         ...DEFAULT_CONFIG.analysis?.lint,
@@ -252,7 +263,7 @@ export function normalizeLlmProviderName(
   value: unknown,
   fallback: PrimaryLlmProviderName,
 ): PrimaryLlmProviderName {
-  if (value === "huggingface" || value === "openrouter") {
+  if (value === "huggingface" || value === "openrouter" || value === "openai") {
     return value;
   }
 
@@ -262,7 +273,7 @@ export function normalizeLlmProviderName(
 export function normalizeOptionalLlmProviderName(
   value: unknown,
 ): FallbackLlmProviderName | undefined {
-  if (value === "huggingface" || value === "openrouter") {
+  if (value === "huggingface" || value === "openrouter" || value === "openai") {
     return value;
   }
 

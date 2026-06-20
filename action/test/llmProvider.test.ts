@@ -179,6 +179,39 @@ test("Hugging Face primary can fall back to OpenRouter with OpenRouter model", a
   assert.equal(result.model, "cohere/north-mini-code:free");
 });
 
+test("OpenRouter primary can fall back to OpenAI with OpenAI model", async () => {
+  const calls: Array<{ provider: string; model: string }> = [];
+  const result = await callLlmWithFallback({
+    prompt: "review",
+    primaryProvider: provider("openrouter", async (params) => {
+      calls.push({ provider: "openrouter", model: params.model });
+      const error = new Error("rate limit");
+      (error as any).status = 429;
+      throw error;
+    }),
+    fallbackProvider: provider("openai", async (params) => {
+      calls.push({ provider: "openai", model: params.model });
+      return "fallback text";
+    }),
+    primaryModel: "cohere/north-mini-code:free",
+    fallbackModel: "gpt-4.1-mini",
+    fallbackOn: ["rate_limited"],
+  });
+
+  assert.deepEqual(calls, [
+    {
+      provider: "openrouter",
+      model: "cohere/north-mini-code:free",
+    },
+    {
+      provider: "openai",
+      model: "gpt-4.1-mini",
+    },
+  ]);
+  assert.equal(result.provider, "openai");
+  assert.equal(result.model, "gpt-4.1-mini");
+});
+
 test("missing OpenRouter key is classified safely as auth failure", async () => {
   await assert.rejects(
     () =>
@@ -195,6 +228,29 @@ test("missing OpenRouter key is classified safely as auth failure", async () => 
       assert.ok(error instanceof LlmProviderCallError);
       assert.equal(error.failure.provider, "openrouter");
       assert.equal(error.failure.model, "cohere/north-mini-code:free");
+      assert.equal(error.failure.type, "auth_failed");
+      assert.doesNotMatch(error.failure.message, /Bearer|sk-|hf_/);
+      return true;
+    }
+  );
+});
+
+test("missing OpenAI key is classified safely as auth failure", async () => {
+  await assert.rejects(
+    () =>
+      callLlmWithFallback({
+        prompt: "review",
+        primaryProvider: new MissingApiKeyProvider(
+          "openai",
+          "OPENAI_API_KEY"
+        ),
+        primaryModel: "gpt-4.1-mini",
+        fallbackOn: ["quota_exceeded"],
+      }),
+    (error) => {
+      assert.ok(error instanceof LlmProviderCallError);
+      assert.equal(error.failure.provider, "openai");
+      assert.equal(error.failure.model, "gpt-4.1-mini");
       assert.equal(error.failure.type, "auth_failed");
       assert.doesNotMatch(error.failure.message, /Bearer|sk-|hf_/);
       return true;

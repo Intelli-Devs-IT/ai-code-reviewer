@@ -22,7 +22,7 @@ This file describes what the project currently does. Treat the codebase as the f
 * Model validation supports `strict`, `warn`, and `off` modes; `warn` is the default and allows untested custom/private models with warnings.
 * Provider responses are validated so empty responses, raw HTML, and obvious provider errors are skipped before review cleanup and scoring.
 * Provider quota/payment failures are classified and shown in the summary so failed provider calls are not presented as successful low-risk reviews.
-* OpenRouter can be configured as an optional primary or fallback provider, with provider-aware model resolution for primary and fallback calls.
+* OpenRouter and OpenAI can be configured as optional primary or fallback providers, with provider-aware model resolution for primary and fallback calls.
 * Optional external ESLint, Semgrep, and simple test-result JSON reports can be loaded, parsed, normalized, correlated with changed files/functions, included as capped prompt evidence, and counted in the summary.
 * Inline comments are posted near the correct function area.
 * Unchanged functions are ignored by the AST-based inline review path.

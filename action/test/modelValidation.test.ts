@@ -216,6 +216,22 @@ test("OpenRouter primary model is not validated against Hugging Face tested mode
   assert.doesNotThrow(() => validateConfiguredModels(config));
 });
 
+test("OpenAI model is not validated against Hugging Face tested models", () => {
+  const config = mergeReviewerConfig({
+    model_validation: {
+      mode: "strict",
+    },
+    providers: {
+      primary: "openai",
+    },
+    openai: {
+      default_model: "gpt-4.1-mini",
+    },
+  });
+
+  assert.doesNotThrow(() => validateConfiguredModels(config));
+});
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

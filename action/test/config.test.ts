@@ -5,6 +5,7 @@ import {
   DEFAULT_MAX_FUNCTIONS_PER_FILE,
   DEFAULT_MAX_INLINE_COMMENTS,
   DEFAULT_MAX_TOTAL_FUNCTIONS,
+  DEFAULT_OPENAI_MODEL,
   DEFAULT_OPENROUTER_MODEL,
   DEFAULT_PROVIDER_FALLBACK_ON,
   DEFAULT_CONFIG,
@@ -74,6 +75,10 @@ test("config defaults OpenRouter model", () => {
     mergeReviewerConfig().openrouter?.default_model,
     DEFAULT_OPENROUTER_MODEL,
   );
+});
+
+test("config defaults OpenAI model", () => {
+  assert.equal(mergeReviewerConfig().openai?.default_model, DEFAULT_OPENAI_MODEL);
 });
 
 test("config reads model validation modes", () => {
@@ -151,6 +156,24 @@ test("config reads OpenRouter primary and Hugging Face fallback", () => {
     config.openrouter?.default_model,
     "cohere/north-mini-code:free",
   );
+});
+
+test("config reads OpenAI primary and fallback settings", () => {
+  const config = mergeReviewerConfig({
+    providers: {
+      primary: "openai",
+      fallback: "openrouter",
+      fallback_on: ["rate_limited"],
+    },
+    openai: {
+      default_model: "gpt-4.1-mini",
+    },
+  });
+
+  assert.equal(config.providers?.primary, "openai");
+  assert.equal(config.providers?.fallback, "openrouter");
+  assert.deepEqual(config.providers?.fallback_on, ["rate_limited"]);
+  assert.equal(config.openai?.default_model, "gpt-4.1-mini");
 });
 
 test("invalid provider failure behavior falls back to warn", () => {

@@ -225,6 +225,8 @@ function formatProviderFailure(failure) {
     return `${provider} ${type}${model}${location}.`;
 }
 function formatProviderName(provider) {
+    if (provider === "openai")
+        return "OpenAI";
     if (provider === "openrouter")
         return "OpenRouter";
     if (provider === "huggingface")
