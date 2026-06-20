@@ -276,6 +276,14 @@ function createConfiguredProvider(params) {
     }
     return params.hfKey ? new llm_huggingface_1.HuggingFaceLLM(params.hfKey, core) : null;
 }
+function createProviderOrMissingKeyProvider(params) {
+    const configuredProvider = createConfiguredProvider(params);
+    if (configuredProvider) {
+        return configuredProvider;
+    }
+    const envVarName = getProviderApiKeyEnvVar(params.provider);
+    return new llmProvider_1.MissingApiKeyProvider(params.provider, envVarName || "provider configuration");
+}
 /* =======================
    Main Action
    ======================= */
@@ -304,8 +312,8 @@ async function run() {
         const INLINE_CONFIDENCE_THRESHOLD = (0, config_1.getInlineConfidenceThreshold)(reviewStrictness);
         const providerFailureBehavior = config.provider_failures?.behavior ?? "warn";
         const fallbackOn = config.providers?.fallback_on ?? [];
-        const primaryProviderName = config.providers?.primary ?? "huggingface";
-        const fallbackProviderName = config.providers?.fallback;
+        const providerChainNames = (0, config_1.resolveProviderChain)(config);
+        const primaryProviderName = providerChainNames[0] ?? "huggingface";
         const reviewLimits = (0, reviewLimits_1.getReviewLimits)(config);
         const reviewLimitState = (0, reviewLimits_1.createReviewLimitState)(reviewLimits);
         if (!config.enabled) {
@@ -333,40 +341,42 @@ async function run() {
         const openAIKey = process.env.OPENAI_API_KEY;
         const ollamaBaseUrl = process.env.OLLAMA_BASE_URL?.trim() || config.ollama?.base_url;
         const providerReferer = `${process.env.GITHUB_SERVER_URL ?? "https://github.com"}/${owner}/${repo}`;
-        let primaryProvider = createConfiguredProvider({
-            provider: primaryProviderName,
-            hfKey,
-            openRouterKey,
-            openAIKey,
-            ollamaBaseUrl,
-            referer: providerReferer,
-        });
-        const fallbackProvider = fallbackProviderName
-            ? createConfiguredProvider({
-                provider: fallbackProviderName,
+        const providerChain = providerChainNames.map((providerName) => {
+            const configuredProvider = createConfiguredProvider({
+                provider: providerName,
                 hfKey,
                 openRouterKey,
                 openAIKey,
                 ollamaBaseUrl,
                 referer: providerReferer,
-            }) ?? undefined
-            : undefined;
-        if (!primaryProvider) {
-            const envVarName = getProviderApiKeyEnvVar(primaryProviderName);
-            core.warning(envVarName
-                ? `${getProviderDisplayName(primaryProviderName)} primary provider is configured but ${envVarName} is not set.`
-                : `${getProviderDisplayName(primaryProviderName)} primary provider could not be configured.`);
-            if (primaryProviderName === "huggingface" && !fallbackProviderName) {
-                core.warning("HF_API_KEY not set. AI reviews disabled.");
-                return;
+            });
+            if (configuredProvider) {
+                return {
+                    name: providerName,
+                    provider: configuredProvider,
+                };
             }
-            primaryProvider = new llmProvider_1.MissingApiKeyProvider(primaryProviderName, envVarName);
-        }
-        if (fallbackProviderName && !fallbackProvider) {
-            const envVarName = getProviderApiKeyEnvVar(fallbackProviderName);
+            const envVarName = getProviderApiKeyEnvVar(providerName);
             core.warning(envVarName
-                ? `${getProviderDisplayName(fallbackProviderName)} fallback provider is configured but ${envVarName} is not set.`
-                : `${getProviderDisplayName(fallbackProviderName)} fallback provider could not be configured.`);
+                ? `${getProviderDisplayName(providerName)} provider is configured but ${envVarName} is not set.`
+                : `${getProviderDisplayName(providerName)} provider could not be configured.`);
+            return {
+                name: providerName,
+                provider: createProviderOrMissingKeyProvider({
+                    provider: providerName,
+                    hfKey,
+                    openRouterKey,
+                    openAIKey,
+                    ollamaBaseUrl,
+                    referer: providerReferer,
+                }),
+            };
+        });
+        if (primaryProviderName === "huggingface" &&
+            providerChain.length === 1 &&
+            providerChain[0].provider instanceof llmProvider_1.MissingApiKeyProvider) {
+            core.warning("HF_API_KEY not set. AI reviews disabled.");
+            return;
         }
         /* =======================
            Fetch existing inline comments
@@ -431,6 +441,7 @@ async function run() {
         const reviewedFilePaths = new Set();
         const summaryFindings = [];
         const providerFailures = [];
+        let providerFallbackUsed = false;
         let highestAcceptedFindingRisk = "low";
         let highestExternalAnalysisRisk = "low";
         const labelMap = {
@@ -459,18 +470,15 @@ async function run() {
             if (!patch)
                 continue;
             const inlineLanguage = (0, modelRouting_1.detectLanguageFromPath)(file.filename);
-            const inlineReviewModel = (0, modelRouting_1.resolveModelForProviderFile)({
-                provider: primaryProviderName,
-                filePath: file.filename,
-                config,
-            });
-            const inlineFallbackModel = fallbackProviderName
-                ? (0, modelRouting_1.resolveModelForProviderFile)({
-                    provider: fallbackProviderName,
+            const inlineProviderChain = providerChain.map((entry) => ({
+                provider: entry.provider,
+                model: (0, modelRouting_1.resolveModelForProviderFile)({
+                    provider: entry.name,
                     filePath: file.filename,
                     config,
-                })
-                : undefined;
+                }),
+            }));
+            const inlineReviewModel = inlineProviderChain[0]?.model ?? "";
             const fileExternalFindings = (0, externalAnalysis_1.getFindingsForFile)(externalAnalysis.findings, file.filename);
             let attemptedFunctionsForFile = 0;
             const providerModelLog = [
@@ -482,6 +490,12 @@ async function run() {
             ];
             if (primaryProviderName === "ollama" && ollamaBaseUrl) {
                 providerModelLog.push(`baseUrl=${ollamaBaseUrl}`);
+            }
+            if (inlineProviderChain.length > 1) {
+                providerModelLog.push(`fallbackChain=${inlineProviderChain
+                    .slice(1)
+                    .map((entry) => `${entry.provider.name}:${entry.model}`)
+                    .join(",")}`);
             }
             core.info(providerModelLog.join("\n"));
             const changedLines = (0, util_helpers_1.getChangedLines)(patch);
@@ -576,12 +590,9 @@ async function run() {
                     (0, reviewLimits_1.recordFunctionReviewAttempt)(reviewLimitState);
                     attemptedFunctionsForFile += 1;
                     try {
-                        const llmResult = await (0, llmProvider_1.callLlmWithFallback)({
+                        const llmResult = await (0, llmProvider_1.callLlmWithProviderChain)({
                             prompt,
-                            primaryProvider,
-                            fallbackProvider,
-                            primaryModel: inlineReviewModel,
-                            fallbackModel: inlineFallbackModel,
+                            providerChain: inlineProviderChain,
                             fallbackOn,
                             filePath: file.filename,
                             functionName: target.fn.name,
@@ -590,6 +601,7 @@ async function run() {
                         raw = llmResult.text;
                         reviewProviderName = llmResult.provider;
                         reviewModel = llmResult.model;
+                        providerFallbackUsed || (providerFallbackUsed = llmResult.usedFallback);
                     }
                     catch (error) {
                         const providerFailure = error instanceof llmProvider_1.LlmProviderCallError
@@ -781,12 +793,9 @@ async function run() {
             let reviewProviderName = primaryProviderName;
             let reviewModel = inlineReviewModel;
             try {
-                const llmResult = await (0, llmProvider_1.callLlmWithFallback)({
+                const llmResult = await (0, llmProvider_1.callLlmWithProviderChain)({
                     prompt,
-                    primaryProvider,
-                    fallbackProvider,
-                    primaryModel: inlineReviewModel,
-                    fallbackModel: inlineFallbackModel,
+                    providerChain: inlineProviderChain,
                     fallbackOn,
                     filePath: file.filename,
                     logger: core,
@@ -794,6 +803,7 @@ async function run() {
                 raw = llmResult.text;
                 reviewProviderName = llmResult.provider;
                 reviewModel = llmResult.model;
+                providerFallbackUsed || (providerFallbackUsed = llmResult.usedFallback);
             }
             catch (error) {
                 const providerFailure = error instanceof llmProvider_1.LlmProviderCallError
@@ -913,6 +923,7 @@ async function run() {
                 findings: summaryFindings,
                 providerFailures,
                 providerFailureBehavior,
+                providerFallbackUsed,
                 reviewLimits: reviewLimitState,
                 externalAnalysis,
                 externalAnalysisRisk: highestExternalAnalysisRisk,
@@ -935,6 +946,7 @@ async function run() {
                 findings: summaryFindings,
                 providerFailures,
                 providerFailureBehavior,
+                providerFallbackUsed,
                 reviewLimits: reviewLimitState,
                 externalAnalysis,
                 externalAnalysisRisk: highestExternalAnalysisRisk,
@@ -950,6 +962,7 @@ async function run() {
             findings: summaryFindings,
             providerFailures,
             providerFailureBehavior,
+            providerFallbackUsed,
             reviewLimits: reviewLimitState,
             externalAnalysis,
             externalAnalysisRisk: highestExternalAnalysisRisk,

@@ -15,7 +15,7 @@ function createSummaryFinding({ filePath, functionName, review, risk, }) {
         risk,
     };
 }
-function buildSummaryBody({ reviewedFilePaths, findings, providerFailures = [], providerFailureBehavior = "warn", reviewLimits, externalAnalysis, externalAnalysisRisk = "low", }) {
+function buildSummaryBody({ reviewedFilePaths, findings, providerFailures = [], providerFailureBehavior = "warn", providerFallbackUsed = false, reviewLimits, externalAnalysis, externalAnalysisRisk = "low", }) {
     const dedupedFindings = dedupeFindings(findings);
     const baseOverallRisk = reviewedFilePaths.size === 0 && providerFailures.length > 0
         ? "unknown"
@@ -37,6 +37,8 @@ Overall Risk: ${riskLabel}
 ${formatKeyFindings(dedupedFindings, providerFailures)}
 
 ${formatProviderFailures(providerFailures, providerFailureBehavior)}
+
+${formatProviderFallbackUsage(providerFallbackUsed)}
 
 ${formatReviewLimits(reviewLimits)}
 
@@ -181,6 +183,12 @@ ${intro}
 ${dedupeProviderFailures(providerFailures)
         .map((failure) => `* ${formatProviderFailure(failure)}`)
         .join("\n")}`;
+}
+function formatProviderFallbackUsage(providerFallbackUsed) {
+    if (!providerFallbackUsed) {
+        return "";
+    }
+    return "## Provider Fallback\n\nProvider fallback was used for some reviews.";
 }
 function formatReviewLimits(reviewLimits) {
     if (!hasLimitSkips(reviewLimits)) {

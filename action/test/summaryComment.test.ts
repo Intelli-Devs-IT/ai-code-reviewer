@@ -167,6 +167,17 @@ test("mixed success and provider failure summary mentions partial review", () =>
   assert.match(body, /Resolve provider access issues and rerun the workflow/);
 });
 
+test("summary can mention provider fallback usage", () => {
+  const body = buildSummaryBody({
+    reviewedFilePaths: new Set(["src/a.ts"]),
+    findings: [],
+    providerFallbackUsed: true,
+  });
+
+  assert.match(body, /## Provider Fallback/);
+  assert.match(body, /Provider fallback was used for some reviews\./);
+});
+
 test("skip behavior keeps provider failure summary concise", () => {
   const body = buildSummaryBody({
     reviewedFilePaths: new Set(["src/a.ts"]),

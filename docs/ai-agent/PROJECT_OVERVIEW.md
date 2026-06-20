@@ -51,9 +51,11 @@ Model validation can be configured with `model_validation.mode`. It defaults to 
 
 Provider failure handling can be configured with `provider_failures.behavior`. It defaults to `warn`, which continues the workflow and includes provider failures in the summary. Use `fail` to fail the workflow when provider calls fail, or `skip` to keep failure details concise while avoiding misleading review summaries.
 
-Hugging Face remains the default primary LLM provider. OpenRouter, OpenAI, and Ollama can be configured as either primary or fallback providers with `providers.primary` or `providers.fallback`. OpenRouter uses `OPENROUTER_API_KEY`; OpenAI uses `OPENAI_API_KEY`; Ollama uses a local or self-hosted OpenAI-compatible endpoint and does not require an API key by default. Provider-specific defaults are kept separate so model names are not reused across providers.
+Hugging Face remains the default primary LLM provider. OpenRouter, OpenAI, and Ollama can be configured as primary or fallback providers with `providers.primary`, legacy single `providers.fallback`, or ordered `providers.fallbacks`. OpenRouter uses `OPENROUTER_API_KEY`; OpenAI uses `OPENAI_API_KEY`; Ollama uses a local or self-hosted OpenAI-compatible endpoint and does not require an API key by default. Provider-specific defaults are kept separate so model names are not reused across providers.
 
 Ollama defaults to `http://localhost:11434/v1` with `qwen2.5-coder:7b`. `OLLAMA_BASE_URL` can override the configured/default base URL for a run. `localhost:11434` must be reachable from the runner environment, so self-hosted runners are recommended for local Ollama usage. GitHub-hosted runners will not connect to a developer machine's personal Ollama server by default.
+
+When `providers.fallbacks` is configured, fallback providers are tried in order and duplicates are skipped. The older `providers.fallback` field remains supported as a one-provider fallback chain. Fallback only happens for failure types listed in `providers.fallback_on`; authentication or configuration errors should usually be fixed rather than used as fallback triggers.
 
 Optional external analysis report loading can be enabled with `analysis.lint`, `analysis.semgrep`, and `analysis.tests`. The action can load and normalize existing JSON report files, correlate findings with changed files/functions, and include a capped evidence section in inline review prompts. It does not run those tools directly and does not post tool findings blindly as comments.
 
@@ -96,7 +98,10 @@ provider_failures:
 
 providers:
   primary: huggingface
-  fallback: openrouter
+  fallbacks:
+    - openrouter
+    - openai
+    - ollama
   fallback_on:
     - quota_exceeded
     - rate_limited

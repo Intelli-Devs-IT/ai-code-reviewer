@@ -45,6 +45,7 @@ export interface ReviewerConfig {
   providers?: {
     primary?: PrimaryLlmProviderName;
     fallback?: FallbackLlmProviderName;
+    fallbacks?: FallbackLlmProviderName[];
     fallback_on?: ProviderFailureType[];
   };
   openrouter?: {
@@ -170,6 +171,9 @@ export function mergeReviewerConfig(
   const fallbackProvider = normalizeOptionalLlmProviderName(
     config.providers?.fallback,
   );
+  const fallbackProviders = normalizeOptionalLlmProviderNames(
+    config.providers?.fallbacks,
+  );
 
   return {
     ...DEFAULT_CONFIG,
@@ -214,6 +218,7 @@ export function mergeReviewerConfig(
       ...(config.providers ?? {}),
       primary: primaryProvider,
       fallback: fallbackProvider,
+      fallbacks: fallbackProviders,
       fallback_on: normalizeProviderFallbackOn(config.providers?.fallback_on),
     },
     openrouter: {
@@ -314,6 +319,42 @@ export function normalizeOptionalLlmProviderName(
   }
 
   return undefined;
+}
+
+export function normalizeOptionalLlmProviderNames(
+  value: unknown,
+): FallbackLlmProviderName[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((provider) => normalizeOptionalLlmProviderName(provider))
+    .filter((provider): provider is FallbackLlmProviderName => Boolean(provider));
+}
+
+export function resolveProviderChain(config: ReviewerConfig): LlmProviderName[] {
+  const primaryProvider = config.providers?.primary ?? "huggingface";
+  const configuredFallbacks = config.providers?.fallbacks ?? [];
+  const fallbackProviders =
+    configuredFallbacks.length > 0
+      ? configuredFallbacks
+      : config.providers?.fallback
+        ? [config.providers.fallback]
+        : [];
+  const chain: LlmProviderName[] = [];
+  const seen = new Set<LlmProviderName>();
+
+  for (const provider of [primaryProvider, ...fallbackProviders]) {
+    if (seen.has(provider)) {
+      continue;
+    }
+
+    seen.add(provider);
+    chain.push(provider);
+  }
+
+  return chain;
 }
 
 export function normalizeProviderFallbackOn(

@@ -7,6 +7,8 @@ exports.normalizeModelValidationMode = normalizeModelValidationMode;
 exports.normalizeProviderFailureBehavior = normalizeProviderFailureBehavior;
 exports.normalizeLlmProviderName = normalizeLlmProviderName;
 exports.normalizeOptionalLlmProviderName = normalizeOptionalLlmProviderName;
+exports.normalizeOptionalLlmProviderNames = normalizeOptionalLlmProviderNames;
+exports.resolveProviderChain = resolveProviderChain;
 exports.normalizeProviderFallbackOn = normalizeProviderFallbackOn;
 exports.normalizePositiveInteger = normalizePositiveInteger;
 exports.normalizeNonEmptyString = normalizeNonEmptyString;
@@ -91,6 +93,7 @@ function mergeReviewerConfig(config = {}) {
     const providerFailureBehavior = normalizeProviderFailureBehavior(config.provider_failures?.behavior);
     const primaryProvider = normalizeLlmProviderName(config.providers?.primary, "huggingface");
     const fallbackProvider = normalizeOptionalLlmProviderName(config.providers?.fallback);
+    const fallbackProviders = normalizeOptionalLlmProviderNames(config.providers?.fallbacks);
     return {
         ...exports.DEFAULT_CONFIG,
         ...config,
@@ -125,6 +128,7 @@ function mergeReviewerConfig(config = {}) {
             ...(config.providers ?? {}),
             primary: primaryProvider,
             fallback: fallbackProvider,
+            fallbacks: fallbackProviders,
             fallback_on: normalizeProviderFallbackOn(config.providers?.fallback_on),
         },
         openrouter: {
@@ -196,6 +200,33 @@ function normalizeOptionalLlmProviderName(value) {
         return value;
     }
     return undefined;
+}
+function normalizeOptionalLlmProviderNames(value) {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    return value
+        .map((provider) => normalizeOptionalLlmProviderName(provider))
+        .filter((provider) => Boolean(provider));
+}
+function resolveProviderChain(config) {
+    const primaryProvider = config.providers?.primary ?? "huggingface";
+    const configuredFallbacks = config.providers?.fallbacks ?? [];
+    const fallbackProviders = configuredFallbacks.length > 0
+        ? configuredFallbacks
+        : config.providers?.fallback
+            ? [config.providers.fallback]
+            : [];
+    const chain = [];
+    const seen = new Set();
+    for (const provider of [primaryProvider, ...fallbackProviders]) {
+        if (seen.has(provider)) {
+            continue;
+        }
+        seen.add(provider);
+        chain.push(provider);
+    }
+    return chain;
 }
 function normalizeProviderFallbackOn(value) {
     if (!Array.isArray(value)) {

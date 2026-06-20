@@ -13,7 +13,7 @@
 9. LLM review generation
 10. Provider response validation
 11. Provider failure classification
-12. Provider-aware model resolution and optional provider fallback
+12. Provider-aware model resolution and optional provider fallback chains
 13. Configurable inline prompt modes
 14. Configurable review cost and noise limits
 15. Optional model routing by file language
@@ -58,7 +58,7 @@ Resolve Provider-Specific Model
 ↓
 Classify Provider Failures
 ↓
-Fallback To Configured Provider If Allowed
+Fallback Through Configured Provider Chain If Allowed
 ↓
 Clean + Normalize LLM Output
 ↓
@@ -108,7 +108,7 @@ Merge Blocking
 * Provider response validation lives in `action/src/helpers/modelResponseValidation.ts`.
 * Provider failure classification lives in `action/src/helpers/providerFailures.ts`.
 * Provider-aware model resolution lives in `action/src/helpers/modelRouting.ts`.
-* Provider fallback orchestration lives in `action/src/helpers/llmProvider.ts`.
+* Provider fallback chain orchestration lives in `action/src/helpers/llmProvider.ts`.
 * OpenRouter provider code lives in `action/src/llm.openrouter.ts`.
 * OpenAI provider code lives in `action/src/llm.openai.ts`.
 * Ollama provider code lives in `action/src/llm.ollama.ts`.
@@ -137,9 +137,11 @@ Merge Blocking
 * Model validation defaults to warning on untested configured models; strict mode can require tested models only, and off mode supports advanced custom/private model usage.
 * Provider responses must be validated before model text enters cleanup, confidence scoring, comments, or summary findings.
 * Provider quota, payment, rate-limit, auth, model availability, and network failures should be reflected honestly in logs and summaries.
-* Hugging Face is the default primary provider; OpenRouter, OpenAI, and Ollama can be configured as primary or fallback when their required endpoint or API keys are available.
+* Hugging Face is the default primary provider; OpenRouter, OpenAI, and Ollama can be configured as primary or ordered fallback providers when their required endpoint or API keys are available.
 * Ollama is intended for local or self-hosted runners and requires the configured `ollama.base_url` to be reachable from the runner.
 * Hugging Face, OpenRouter, OpenAI, and Ollama model names must be resolved separately for primary and fallback calls.
+* `providers.fallbacks` takes precedence over legacy `providers.fallback`; fallback order is deterministic and duplicate providers are skipped.
+* Fallback should only happen for configured fallback-eligible failure types. Auth and config errors should usually stop the chain.
 * Inline comments should be attached to changed lines whenever possible.
 * If a function start line is not commentable, use a changed line inside that function.
 * If AST extraction fails or returns no functions, the old scoped diff fallback can be used.

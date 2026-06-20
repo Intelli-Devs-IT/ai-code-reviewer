@@ -81,7 +81,7 @@ test("changed-function review checks function limits before provider calls", () 
   assert.match(INDEX_SOURCE, /getFunctionReviewLimitSkip/);
   assert.match(
     INDEX_SOURCE,
-    /getFunctionReviewLimitSkip[\s\S]*?callLlmWithFallback/
+    /getFunctionReviewLimitSkip[\s\S]*?callLlmWithProviderChain/
   );
   assert.match(INDEX_SOURCE, /recordFunctionReviewAttempt/);
 });

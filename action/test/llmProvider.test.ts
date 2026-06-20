@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   callLlmWithFallback,
+  callLlmWithProviderChain,
   LlmProvider,
   LlmProviderCallError,
   MissingApiKeyProvider,
@@ -52,9 +53,11 @@ test("Hugging Face quota failure triggers OpenRouter fallback", async () => {
   assert.equal(result.provider, "openrouter");
   assert.equal(result.model, "qwen/qwen-2.5-coder-32b-instruct");
   assert.equal(result.usedFallback, true);
-  assert.match(logs[0], /Primary provider failed, trying fallback:/);
-  assert.match(logs[0], /failureType=quota_exceeded/);
-  assert.match(logs[1], /Fallback provider succeeded:/);
+  assert.match(logs[0], /LLM provider attempt:/);
+  assert.match(logs[1], /Provider failed, trying next fallback:/);
+  assert.match(logs[1], /failureType=quota_exceeded/);
+  assert.match(logs[2], /LLM provider attempt:/);
+  assert.match(logs[3], /Fallback provider succeeded:/);
 });
 
 test("fallback failure is recorded safely", async () => {
@@ -243,6 +246,208 @@ test("OpenRouter primary can fall back to Ollama with Ollama model", async () =>
   ]);
   assert.equal(result.provider, "ollama");
   assert.equal(result.model, "qwen2.5-coder:7b");
+});
+
+test("provider chain stops after first success", async () => {
+  const calls: string[] = [];
+  const result = await callLlmWithProviderChain({
+    prompt: "review",
+    providerChain: [
+      {
+        provider: provider("openai", async (params) => {
+          calls.push(`${params.model}:openai`);
+          const error = new Error("rate limit");
+          (error as any).status = 429;
+          throw error;
+        }),
+        model: "gpt-4.1-mini",
+      },
+      {
+        provider: provider("openrouter", async (params) => {
+          calls.push(`${params.model}:openrouter`);
+          return "fallback text";
+        }),
+        model: "cohere/north-mini-code:free",
+      },
+      {
+        provider: provider("ollama", async (params) => {
+          calls.push(`${params.model}:ollama`);
+          return "unused";
+        }),
+        model: "qwen2.5-coder:7b",
+      },
+    ],
+    fallbackOn: ["rate_limited"],
+  });
+
+  assert.deepEqual(calls, [
+    "gpt-4.1-mini:openai",
+    "cohere/north-mini-code:free:openrouter",
+  ]);
+  assert.equal(result.provider, "openrouter");
+  assert.equal(result.model, "cohere/north-mini-code:free");
+  assert.equal(result.usedFallback, true);
+  assert.deepEqual(result.attempts, [
+    {
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      success: false,
+      failureType: "rate_limited",
+    },
+    {
+      provider: "openrouter",
+      model: "cohere/north-mini-code:free",
+      success: true,
+    },
+  ]);
+});
+
+test("provider chain tries next provider for fallback-eligible failures", async () => {
+  const calls: string[] = [];
+  const result = await callLlmWithProviderChain({
+    prompt: "review",
+    providerChain: [
+      {
+        provider: provider("openai", async (params) => {
+          calls.push(`${params.model}:openai`);
+          const error = new Error("rate limit");
+          (error as any).status = 429;
+          throw error;
+        }),
+        model: "gpt-4.1-mini",
+      },
+      {
+        provider: provider("openrouter", async (params) => {
+          calls.push(`${params.model}:openrouter`);
+          const error = new Error("model unavailable");
+          (error as any).status = 404;
+          throw error;
+        }),
+        model: "cohere/north-mini-code:free",
+      },
+      {
+        provider: provider("ollama", async (params) => {
+          calls.push(`${params.model}:ollama`);
+          return "local fallback";
+        }),
+        model: "qwen2.5-coder:7b",
+      },
+    ],
+    fallbackOn: ["rate_limited", "model_unavailable"],
+  });
+
+  assert.deepEqual(calls, [
+    "gpt-4.1-mini:openai",
+    "cohere/north-mini-code:free:openrouter",
+    "qwen2.5-coder:7b:ollama",
+  ]);
+  assert.equal(result.text, "local fallback");
+  assert.equal(result.provider, "ollama");
+  assert.equal(result.model, "qwen2.5-coder:7b");
+});
+
+test("provider chain stops for non-fallback-eligible failures", async () => {
+  let fallbackCalls = 0;
+
+  await assert.rejects(
+    () =>
+      callLlmWithProviderChain({
+        prompt: "review",
+        providerChain: [
+          {
+            provider: provider("openai", async () => {
+              const error = new Error("Unauthorized");
+              (error as any).status = 401;
+              throw error;
+            }),
+            model: "gpt-4.1-mini",
+          },
+          {
+            provider: provider("openrouter", async () => {
+              fallbackCalls += 1;
+              return "fallback text";
+            }),
+            model: "cohere/north-mini-code:free",
+          },
+        ],
+        fallbackOn: ["rate_limited"],
+      }),
+    (error) => {
+      assert.ok(error instanceof LlmProviderCallError);
+      assert.equal(error.failure.provider, "openai");
+      assert.equal(error.failure.type, "auth_failed");
+      return true;
+    }
+  );
+
+  assert.equal(fallbackCalls, 0);
+});
+
+test("provider chain records final failure when all providers fail", async () => {
+  await assert.rejects(
+    () =>
+      callLlmWithProviderChain({
+        prompt: "review",
+        providerChain: [
+          {
+            provider: provider("openai", async () => {
+              const error = new Error("rate limit");
+              (error as any).status = 429;
+              throw error;
+            }),
+            model: "gpt-4.1-mini",
+          },
+          {
+            provider: provider("openrouter", async () => {
+              const error = new Error("model unavailable");
+              (error as any).status = 404;
+              throw error;
+            }),
+            model: "cohere/north-mini-code:free",
+          },
+        ],
+        fallbackOn: ["rate_limited", "model_unavailable"],
+      }),
+    (error) => {
+      assert.ok(error instanceof LlmProviderCallError);
+      assert.equal(error.failure.provider, "openrouter");
+      assert.equal(error.failure.model, "cohere/north-mini-code:free");
+      assert.equal(error.failure.type, "model_unavailable");
+      return true;
+    }
+  );
+});
+
+test("provider chain logs provider and model without secrets", async () => {
+  const logs: string[] = [];
+  await callLlmWithProviderChain({
+    prompt: "review",
+    providerChain: [
+      {
+        provider: provider("openai", async () => {
+          const error = new Error("rate limit sk-secret123");
+          (error as any).status = 429;
+          throw error;
+        }),
+        model: "gpt-4.1-mini",
+      },
+      {
+        provider: provider("openrouter", async () => "fallback text"),
+        model: "cohere/north-mini-code:free",
+      },
+    ],
+    fallbackOn: ["rate_limited"],
+    filePath: "src/a.ts",
+    functionName: "loadUser",
+    logger: {
+      info: (message) => logs.push(message),
+    },
+  });
+
+  assert.match(logs.join("\n"), /provider=openai/);
+  assert.match(logs.join("\n"), /model=gpt-4\.1-mini/);
+  assert.match(logs.join("\n"), /nextProvider=openrouter/);
+  assert.doesNotMatch(logs.join("\n"), /sk-secret123|Bearer|Authorization/);
 });
 
 test("missing OpenRouter key is classified safely as auth failure", async () => {

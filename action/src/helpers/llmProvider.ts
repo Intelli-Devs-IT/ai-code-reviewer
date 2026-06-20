@@ -19,6 +19,19 @@ export interface LlmCallResult {
   provider: string;
   model: string;
   usedFallback: boolean;
+  attempts: LlmProviderAttemptResult[];
+}
+
+export interface LlmProviderChainEntry {
+  provider: LlmProvider;
+  model: string;
+}
+
+export interface LlmProviderAttemptResult {
+  provider: string;
+  model: string;
+  success: boolean;
+  failureType?: ProviderFailureType;
 }
 
 interface Logger {
@@ -58,82 +71,136 @@ export async function callLlmWithFallback(params: {
   functionName?: string;
   logger?: Logger;
 }): Promise<LlmCallResult> {
-  try {
-    const text = await params.primaryProvider.review({
-      prompt: params.prompt,
-      model: params.primaryModel,
-      temperature: 0.2,
-    });
+  return callLlmWithProviderChain({
+    prompt: params.prompt,
+    providerChain: [
+      {
+        provider: params.primaryProvider,
+        model: params.primaryModel,
+      },
+      ...(params.fallbackProvider && params.fallbackModel
+        ? [
+            {
+              provider: params.fallbackProvider,
+              model: params.fallbackModel,
+            },
+          ]
+        : []),
+    ],
+    fallbackOn: params.fallbackOn,
+    filePath: params.filePath,
+    functionName: params.functionName,
+    logger: params.logger,
+  });
+}
 
-    return {
-      text,
-      provider: params.primaryProvider.name,
-      model: params.primaryModel,
-      usedFallback: false,
-    };
-  } catch (error) {
-    const failureType = classifyProviderError(error);
-    const fallbackProvider = params.fallbackProvider;
-    const fallbackModel = params.fallbackModel;
-    const canFallback =
-      fallbackProvider && fallbackModel && params.fallbackOn.includes(failureType);
+export async function callLlmWithProviderChain(params: {
+  prompt: string;
+  providerChain: LlmProviderChainEntry[];
+  fallbackOn: ProviderFailureType[];
+  filePath?: string;
+  functionName?: string;
+  logger?: Logger;
+}): Promise<LlmCallResult> {
+  const attempts: LlmProviderAttemptResult[] = [];
 
-    if (!canFallback) {
-      throw new LlmProviderCallError(
-        createProviderFailure({
-          error,
-          filePath: params.filePath,
-          functionName: params.functionName,
-          provider: params.primaryProvider.name,
-          model: params.primaryModel,
-        })
-      );
-    }
+  if (params.providerChain.length === 0) {
+    throw new LlmProviderCallError(
+      createProviderFailure({
+        error: new Error("No LLM providers configured."),
+        filePath: params.filePath,
+        functionName: params.functionName,
+      })
+    );
+  }
+
+  for (let index = 0; index < params.providerChain.length; index++) {
+    const current = params.providerChain[index];
 
     params.logger?.info(
       [
-        "Primary provider failed, trying fallback:",
+        "LLM provider attempt:",
         `file=${params.filePath ?? ""}`,
         `function=${params.functionName ?? ""}`,
-        `primaryProvider=${params.primaryProvider.name}`,
-        `primaryModel=${params.primaryModel}`,
-        `failureType=${failureType}`,
-        `fallbackProvider=${fallbackProvider.name}`,
-        `fallbackModel=${fallbackModel}`,
+        `provider=${current.provider.name}`,
+        `model=${current.model}`,
       ].join("\n")
     );
 
     try {
-      const text = await fallbackProvider.review({
+      const text = await current.provider.review({
         prompt: params.prompt,
-        model: fallbackModel,
+        model: current.model,
         temperature: 0.2,
       });
 
-      params.logger?.info(
-        [
-          "Fallback provider succeeded:",
-          `provider=${fallbackProvider.name}`,
-          `model=${fallbackModel}`,
-        ].join("\n")
-      );
+      attempts.push({
+        provider: current.provider.name,
+        model: current.model,
+        success: true,
+      });
+
+      if (index > 0) {
+        params.logger?.info(
+          [
+            "Fallback provider succeeded:",
+            `provider=${current.provider.name}`,
+            `model=${current.model}`,
+          ].join("\n")
+        );
+      }
 
       return {
         text,
-        provider: fallbackProvider.name,
-        model: fallbackModel,
-        usedFallback: true,
+        provider: current.provider.name,
+        model: current.model,
+        usedFallback: index > 0,
+        attempts,
       };
-    } catch (fallbackError) {
-      throw new LlmProviderCallError(
-        createProviderFailure({
-          error: fallbackError,
-          filePath: params.filePath,
-          functionName: params.functionName,
-          provider: fallbackProvider.name,
-          model: fallbackModel,
-        })
+    } catch (error) {
+      const failureType = classifyProviderError(error);
+      attempts.push({
+        provider: current.provider.name,
+        model: current.model,
+        success: false,
+        failureType,
+      });
+
+      const next = params.providerChain[index + 1];
+      const canFallback = next && params.fallbackOn.includes(failureType);
+
+      if (!canFallback) {
+        throw new LlmProviderCallError(
+          createProviderFailure({
+            error,
+            filePath: params.filePath,
+            functionName: params.functionName,
+            provider: current.provider.name,
+            model: current.model,
+          })
+        );
+      }
+
+      params.logger?.info(
+        [
+          "Provider failed, trying next fallback:",
+          `file=${params.filePath ?? ""}`,
+          `function=${params.functionName ?? ""}`,
+          `provider=${current.provider.name}`,
+          `model=${current.model}`,
+          `failureType=${failureType}`,
+          `nextProvider=${next.provider.name}`,
+          `nextModel=${next.model}`,
+        ].join("\n")
       );
     }
   }
+
+  throw new LlmProviderCallError(
+    createProviderFailure({
+      error: new Error("All LLM providers failed."),
+      filePath: params.filePath,
+      functionName: params.functionName,
+    })
+  );
 }

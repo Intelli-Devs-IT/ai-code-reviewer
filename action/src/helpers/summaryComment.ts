@@ -24,6 +24,7 @@ export interface SummaryBodyOptions {
   findings: SummaryFinding[];
   providerFailures?: ProviderFailure[];
   providerFailureBehavior?: "warn" | "fail" | "skip";
+  providerFallbackUsed?: boolean;
   reviewLimits?: ReviewLimitState;
   externalAnalysis?: ExternalAnalysisSummary;
   externalAnalysisRisk?: SummaryRiskLevel;
@@ -53,6 +54,7 @@ export function buildSummaryBody({
   findings,
   providerFailures = [],
   providerFailureBehavior = "warn",
+  providerFallbackUsed = false,
   reviewLimits,
   externalAnalysis,
   externalAnalysisRisk = "low",
@@ -80,6 +82,8 @@ Overall Risk: ${riskLabel}
 ${formatKeyFindings(dedupedFindings, providerFailures)}
 
 ${formatProviderFailures(providerFailures, providerFailureBehavior)}
+
+${formatProviderFallbackUsage(providerFallbackUsed)}
 
 ${formatReviewLimits(reviewLimits)}
 
@@ -293,6 +297,14 @@ ${intro}
 ${dedupeProviderFailures(providerFailures)
   .map((failure) => `* ${formatProviderFailure(failure)}`)
   .join("\n")}`;
+}
+
+function formatProviderFallbackUsage(providerFallbackUsed: boolean): string {
+  if (!providerFallbackUsed) {
+    return "";
+  }
+
+  return "## Provider Fallback\n\nProvider fallback was used for some reviews.";
 }
 
 function formatReviewLimits(reviewLimits?: ReviewLimitState): string {

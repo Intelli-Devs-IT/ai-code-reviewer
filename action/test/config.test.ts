@@ -13,6 +13,7 @@ import {
   DEFAULT_CONFIG,
   getInlineConfidenceThreshold,
   mergeReviewerConfig,
+  resolveProviderChain,
 } from "../src/config";
 
 test("config defaults security review mode to disabled", () => {
@@ -144,6 +145,83 @@ test("config reads provider fallback settings", () => {
   assert.equal(config.providers?.fallback, "openrouter");
   assert.deepEqual(config.providers?.fallback_on, ["quota_exceeded"]);
   assert.equal(config.openrouter?.default_model, "openrouter/custom-model");
+});
+
+test("config reads provider fallback chain settings", () => {
+  const config = mergeReviewerConfig({
+    providers: {
+      primary: "openai",
+      fallbacks: ["openrouter", "huggingface", "ollama"],
+      fallback_on: ["rate_limited", "model_unavailable"],
+    },
+  });
+
+  assert.equal(config.providers?.primary, "openai");
+  assert.deepEqual(config.providers?.fallbacks, [
+    "openrouter",
+    "huggingface",
+    "ollama",
+  ]);
+  assert.deepEqual(config.providers?.fallback_on, [
+    "rate_limited",
+    "model_unavailable",
+  ]);
+});
+
+test("resolveProviderChain uses configured fallback chain", () => {
+  const config = mergeReviewerConfig({
+    providers: {
+      primary: "openai",
+      fallbacks: ["openrouter", "huggingface"],
+      fallback: "ollama",
+    },
+  });
+
+  assert.deepEqual(resolveProviderChain(config), [
+    "openai",
+    "openrouter",
+    "huggingface",
+  ]);
+});
+
+test("resolveProviderChain keeps backward-compatible single fallback", () => {
+  const config = mergeReviewerConfig({
+    providers: {
+      primary: "openai",
+      fallback: "openrouter",
+    },
+  });
+
+  assert.deepEqual(resolveProviderChain(config), ["openai", "openrouter"]);
+});
+
+test("resolveProviderChain uses primary only when no fallback is configured", () => {
+  const config = mergeReviewerConfig({
+    providers: {
+      primary: "openai",
+    },
+  });
+
+  assert.deepEqual(resolveProviderChain(config), ["openai"]);
+});
+
+test("resolveProviderChain preserves default Hugging Face provider", () => {
+  assert.deepEqual(resolveProviderChain(mergeReviewerConfig()), ["huggingface"]);
+});
+
+test("resolveProviderChain removes duplicate providers and cycles", () => {
+  const config = mergeReviewerConfig({
+    providers: {
+      primary: "openai",
+      fallbacks: ["openrouter", "openai", "openrouter", "ollama"],
+    },
+  });
+
+  assert.deepEqual(resolveProviderChain(config), [
+    "openai",
+    "openrouter",
+    "ollama",
+  ]);
 });
 
 test("config reads OpenRouter primary and Hugging Face fallback", () => {
