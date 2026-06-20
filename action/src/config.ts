@@ -3,7 +3,11 @@ import type { ProviderFailureType } from "./helpers/providerFailures";
 export type ReviewStrictness = "lenient" | "balanced" | "strict";
 export type ModelValidationMode = "strict" | "warn" | "off";
 export type ProviderFailureBehavior = "warn" | "fail" | "skip";
-export type LlmProviderName = "huggingface" | "openrouter" | "openai";
+export type LlmProviderName =
+  | "huggingface"
+  | "openrouter"
+  | "openai"
+  | "ollama";
 export type PrimaryLlmProviderName = LlmProviderName;
 export type FallbackLlmProviderName = LlmProviderName;
 export type ModelRoutingLanguage =
@@ -49,6 +53,10 @@ export interface ReviewerConfig {
   openai?: {
     default_model?: string;
   };
+  ollama?: {
+    base_url?: string;
+    default_model?: string;
+  };
   analysis?: {
     lint?: {
       enabled?: boolean;
@@ -78,6 +86,8 @@ export const DEFAULT_PROVIDER_FALLBACK_ON: ProviderFailureType[] = [
 
 export const DEFAULT_OPENROUTER_MODEL = "cohere/north-mini-code:free";
 export const DEFAULT_OPENAI_MODEL = "gpt-4.1-mini";
+export const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1";
+export const DEFAULT_OLLAMA_MODEL = "qwen2.5-coder:7b";
 export const DEFAULT_MAX_INLINE_COMMENTS = 10;
 export const DEFAULT_MAX_FUNCTIONS_PER_FILE = 5;
 export const DEFAULT_MAX_TOTAL_FUNCTIONS = 30;
@@ -111,6 +121,10 @@ export const DEFAULT_CONFIG: ReviewerConfig = {
   },
   openai: {
     default_model: DEFAULT_OPENAI_MODEL,
+  },
+  ollama: {
+    base_url: DEFAULT_OLLAMA_BASE_URL,
+    default_model: DEFAULT_OLLAMA_MODEL,
   },
   analysis: {
     lint: {
@@ -210,6 +224,18 @@ export function mergeReviewerConfig(
       ...DEFAULT_CONFIG.openai,
       ...(config.openai ?? {}),
     },
+    ollama: {
+      ...DEFAULT_CONFIG.ollama,
+      ...(config.ollama ?? {}),
+      base_url: normalizeNonEmptyString(
+        config.ollama?.base_url,
+        DEFAULT_OLLAMA_BASE_URL,
+      ),
+      default_model: normalizeNonEmptyString(
+        config.ollama?.default_model,
+        DEFAULT_OLLAMA_MODEL,
+      ),
+    },
     analysis: {
       lint: {
         ...DEFAULT_CONFIG.analysis?.lint,
@@ -263,7 +289,12 @@ export function normalizeLlmProviderName(
   value: unknown,
   fallback: PrimaryLlmProviderName,
 ): PrimaryLlmProviderName {
-  if (value === "huggingface" || value === "openrouter" || value === "openai") {
+  if (
+    value === "huggingface" ||
+    value === "openrouter" ||
+    value === "openai" ||
+    value === "ollama"
+  ) {
     return value;
   }
 
@@ -273,7 +304,12 @@ export function normalizeLlmProviderName(
 export function normalizeOptionalLlmProviderName(
   value: unknown,
 ): FallbackLlmProviderName | undefined {
-  if (value === "huggingface" || value === "openrouter" || value === "openai") {
+  if (
+    value === "huggingface" ||
+    value === "openrouter" ||
+    value === "openai" ||
+    value === "ollama"
+  ) {
     return value;
   }
 
@@ -297,6 +333,17 @@ export function normalizePositiveInteger(
   fallback: number,
 ): number {
   if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    return fallback;
+  }
+
+  return value;
+}
+
+export function normalizeNonEmptyString(
+  value: unknown,
+  fallback: string,
+): string {
+  if (typeof value !== "string" || value.trim() === "") {
     return fallback;
   }
 

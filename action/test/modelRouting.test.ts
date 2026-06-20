@@ -4,6 +4,7 @@ import test from "node:test";
 import { mergeReviewerConfig } from "../src/config";
 import {
   DEFAULT_OPENAI_MODEL,
+  DEFAULT_OLLAMA_MODEL,
   DEFAULT_OPENROUTER_MODEL,
 } from "../src/config";
 import { DEFAULT_HUGGINGFACE_MODEL } from "../src/helpers/huggingFaceModels";
@@ -134,6 +135,50 @@ test("OpenAI provider falls back to DEFAULT_OPENAI_MODEL", () => {
       config,
     }),
     DEFAULT_OPENAI_MODEL
+  );
+});
+
+test("Ollama provider uses ollama.default_model when routing is disabled", () => {
+  const config = mergeReviewerConfig({
+    providers: {
+      primary: "ollama",
+    },
+    model_routing: {
+      enabled: false,
+      default_model: "hf/routed-default",
+    },
+    ollama: {
+      default_model: "qwen2.5-coder:14b",
+    },
+  });
+
+  assert.equal(
+    resolveModelForProviderFile({
+      provider: "ollama",
+      filePath: "src/app.ts",
+      config,
+    }),
+    "qwen2.5-coder:14b"
+  );
+});
+
+test("Ollama provider falls back to DEFAULT_OLLAMA_MODEL", () => {
+  const config = mergeReviewerConfig({
+    providers: {
+      primary: "ollama",
+    },
+    ollama: {
+      default_model: undefined,
+    },
+  });
+
+  assert.equal(
+    resolveModelForProviderFile({
+      provider: "ollama",
+      filePath: "src/app.ts",
+      config,
+    }),
+    DEFAULT_OLLAMA_MODEL
   );
 });
 

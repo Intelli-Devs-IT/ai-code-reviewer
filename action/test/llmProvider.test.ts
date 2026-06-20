@@ -212,6 +212,39 @@ test("OpenRouter primary can fall back to OpenAI with OpenAI model", async () =>
   assert.equal(result.model, "gpt-4.1-mini");
 });
 
+test("OpenRouter primary can fall back to Ollama with Ollama model", async () => {
+  const calls: Array<{ provider: string; model: string }> = [];
+  const result = await callLlmWithFallback({
+    prompt: "review",
+    primaryProvider: provider("openrouter", async (params) => {
+      calls.push({ provider: "openrouter", model: params.model });
+      const error = new Error("rate limit");
+      (error as any).status = 429;
+      throw error;
+    }),
+    fallbackProvider: provider("ollama", async (params) => {
+      calls.push({ provider: "ollama", model: params.model });
+      return "fallback text";
+    }),
+    primaryModel: "cohere/north-mini-code:free",
+    fallbackModel: "qwen2.5-coder:7b",
+    fallbackOn: ["rate_limited"],
+  });
+
+  assert.deepEqual(calls, [
+    {
+      provider: "openrouter",
+      model: "cohere/north-mini-code:free",
+    },
+    {
+      provider: "ollama",
+      model: "qwen2.5-coder:7b",
+    },
+  ]);
+  assert.equal(result.provider, "ollama");
+  assert.equal(result.model, "qwen2.5-coder:7b");
+});
+
 test("missing OpenRouter key is classified safely as auth failure", async () => {
   await assert.rejects(
     () =>

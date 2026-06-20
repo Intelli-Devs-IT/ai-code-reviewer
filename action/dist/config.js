@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DEFAULT_CONFIG = exports.DEFAULT_MAX_TOTAL_FUNCTIONS = exports.DEFAULT_MAX_FUNCTIONS_PER_FILE = exports.DEFAULT_MAX_INLINE_COMMENTS = exports.DEFAULT_OPENAI_MODEL = exports.DEFAULT_OPENROUTER_MODEL = exports.DEFAULT_PROVIDER_FALLBACK_ON = void 0;
+exports.DEFAULT_CONFIG = exports.DEFAULT_MAX_TOTAL_FUNCTIONS = exports.DEFAULT_MAX_FUNCTIONS_PER_FILE = exports.DEFAULT_MAX_INLINE_COMMENTS = exports.DEFAULT_OLLAMA_MODEL = exports.DEFAULT_OLLAMA_BASE_URL = exports.DEFAULT_OPENAI_MODEL = exports.DEFAULT_OPENROUTER_MODEL = exports.DEFAULT_PROVIDER_FALLBACK_ON = void 0;
 exports.mergeReviewerConfig = mergeReviewerConfig;
 exports.normalizeReviewStrictness = normalizeReviewStrictness;
 exports.normalizeModelValidationMode = normalizeModelValidationMode;
@@ -9,6 +9,7 @@ exports.normalizeLlmProviderName = normalizeLlmProviderName;
 exports.normalizeOptionalLlmProviderName = normalizeOptionalLlmProviderName;
 exports.normalizeProviderFallbackOn = normalizeProviderFallbackOn;
 exports.normalizePositiveInteger = normalizePositiveInteger;
+exports.normalizeNonEmptyString = normalizeNonEmptyString;
 exports.getInlineConfidenceThreshold = getInlineConfidenceThreshold;
 exports.DEFAULT_PROVIDER_FALLBACK_ON = [
     "quota_exceeded",
@@ -19,6 +20,8 @@ exports.DEFAULT_PROVIDER_FALLBACK_ON = [
 ];
 exports.DEFAULT_OPENROUTER_MODEL = "cohere/north-mini-code:free";
 exports.DEFAULT_OPENAI_MODEL = "gpt-4.1-mini";
+exports.DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1";
+exports.DEFAULT_OLLAMA_MODEL = "qwen2.5-coder:7b";
 exports.DEFAULT_MAX_INLINE_COMMENTS = 10;
 exports.DEFAULT_MAX_FUNCTIONS_PER_FILE = 5;
 exports.DEFAULT_MAX_TOTAL_FUNCTIONS = 30;
@@ -51,6 +54,10 @@ exports.DEFAULT_CONFIG = {
     },
     openai: {
         default_model: exports.DEFAULT_OPENAI_MODEL,
+    },
+    ollama: {
+        base_url: exports.DEFAULT_OLLAMA_BASE_URL,
+        default_model: exports.DEFAULT_OLLAMA_MODEL,
     },
     analysis: {
         lint: {
@@ -128,6 +135,12 @@ function mergeReviewerConfig(config = {}) {
             ...exports.DEFAULT_CONFIG.openai,
             ...(config.openai ?? {}),
         },
+        ollama: {
+            ...exports.DEFAULT_CONFIG.ollama,
+            ...(config.ollama ?? {}),
+            base_url: normalizeNonEmptyString(config.ollama?.base_url, exports.DEFAULT_OLLAMA_BASE_URL),
+            default_model: normalizeNonEmptyString(config.ollama?.default_model, exports.DEFAULT_OLLAMA_MODEL),
+        },
         analysis: {
             lint: {
                 ...exports.DEFAULT_CONFIG.analysis?.lint,
@@ -167,13 +180,19 @@ function normalizeProviderFailureBehavior(value) {
     return "warn";
 }
 function normalizeLlmProviderName(value, fallback) {
-    if (value === "huggingface" || value === "openrouter" || value === "openai") {
+    if (value === "huggingface" ||
+        value === "openrouter" ||
+        value === "openai" ||
+        value === "ollama") {
         return value;
     }
     return fallback;
 }
 function normalizeOptionalLlmProviderName(value) {
-    if (value === "huggingface" || value === "openrouter" || value === "openai") {
+    if (value === "huggingface" ||
+        value === "openrouter" ||
+        value === "openai" ||
+        value === "ollama") {
         return value;
     }
     return undefined;
@@ -187,6 +206,12 @@ function normalizeProviderFallbackOn(value) {
 }
 function normalizePositiveInteger(value, fallback) {
     if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+        return fallback;
+    }
+    return value;
+}
+function normalizeNonEmptyString(value, fallback) {
+    if (typeof value !== "string" || value.trim() === "") {
         return fallback;
     }
     return value;

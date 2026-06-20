@@ -232,6 +232,22 @@ test("OpenAI model is not validated against Hugging Face tested models", () => {
   assert.doesNotThrow(() => validateConfiguredModels(config));
 });
 
+test("Ollama model is not validated against other provider tested models", () => {
+  const config = mergeReviewerConfig({
+    model_validation: {
+      mode: "strict",
+    },
+    providers: {
+      primary: "ollama",
+    },
+    ollama: {
+      default_model: "qwen2.5-coder:7b",
+    },
+  });
+
+  assert.doesNotThrow(() => validateConfiguredModels(config));
+});
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

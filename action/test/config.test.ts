@@ -6,6 +6,8 @@ import {
   DEFAULT_MAX_INLINE_COMMENTS,
   DEFAULT_MAX_TOTAL_FUNCTIONS,
   DEFAULT_OPENAI_MODEL,
+  DEFAULT_OLLAMA_BASE_URL,
+  DEFAULT_OLLAMA_MODEL,
   DEFAULT_OPENROUTER_MODEL,
   DEFAULT_PROVIDER_FALLBACK_ON,
   DEFAULT_CONFIG,
@@ -79,6 +81,13 @@ test("config defaults OpenRouter model", () => {
 
 test("config defaults OpenAI model", () => {
   assert.equal(mergeReviewerConfig().openai?.default_model, DEFAULT_OPENAI_MODEL);
+});
+
+test("config defaults Ollama settings", () => {
+  const config = mergeReviewerConfig();
+
+  assert.equal(config.ollama?.base_url, DEFAULT_OLLAMA_BASE_URL);
+  assert.equal(config.ollama?.default_model, DEFAULT_OLLAMA_MODEL);
 });
 
 test("config reads model validation modes", () => {
@@ -174,6 +183,41 @@ test("config reads OpenAI primary and fallback settings", () => {
   assert.equal(config.providers?.fallback, "openrouter");
   assert.deepEqual(config.providers?.fallback_on, ["rate_limited"]);
   assert.equal(config.openai?.default_model, "gpt-4.1-mini");
+});
+
+test("config reads Ollama primary and fallback settings", () => {
+  const config = mergeReviewerConfig({
+    providers: {
+      primary: "ollama",
+      fallback: "openrouter",
+      fallback_on: ["model_unavailable", "network_error"],
+    },
+    ollama: {
+      base_url: "http://ollama.local:11434/v1",
+      default_model: "qwen2.5-coder:14b",
+    },
+  });
+
+  assert.equal(config.providers?.primary, "ollama");
+  assert.equal(config.providers?.fallback, "openrouter");
+  assert.deepEqual(config.providers?.fallback_on, [
+    "model_unavailable",
+    "network_error",
+  ]);
+  assert.equal(config.ollama?.base_url, "http://ollama.local:11434/v1");
+  assert.equal(config.ollama?.default_model, "qwen2.5-coder:14b");
+});
+
+test("empty Ollama settings fall back to defaults", () => {
+  const config = mergeReviewerConfig({
+    ollama: {
+      base_url: " ",
+      default_model: "",
+    },
+  });
+
+  assert.equal(config.ollama?.base_url, DEFAULT_OLLAMA_BASE_URL);
+  assert.equal(config.ollama?.default_model, DEFAULT_OLLAMA_MODEL);
 });
 
 test("invalid provider failure behavior falls back to warn", () => {

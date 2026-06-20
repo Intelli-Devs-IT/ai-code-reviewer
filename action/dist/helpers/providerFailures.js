@@ -35,6 +35,7 @@ function classifyProviderError(error) {
         status === 504 ||
         message.includes("network") ||
         message.includes("fetch failed") ||
+        message.includes("econnrefused") ||
         message.includes("econnreset") ||
         message.includes("etimedout")) {
         return "network_error";

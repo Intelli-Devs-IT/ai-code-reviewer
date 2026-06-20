@@ -55,6 +55,9 @@ function resolveModelForProviderFile(params) {
     if (params.provider === "openai") {
         return params.config.openai?.default_model || config_1.DEFAULT_OPENAI_MODEL;
     }
+    if (params.provider === "ollama") {
+        return params.config.ollama?.default_model || config_1.DEFAULT_OLLAMA_MODEL;
+    }
     return resolveModelForFile({
         filePath: params.filePath,
         config: params.config,

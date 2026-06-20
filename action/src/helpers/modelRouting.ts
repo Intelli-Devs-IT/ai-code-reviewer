@@ -1,5 +1,6 @@
 import {
   DEFAULT_OPENAI_MODEL,
+  DEFAULT_OLLAMA_MODEL,
   DEFAULT_OPENROUTER_MODEL,
   LlmProviderName,
   ModelRoutingLanguage,
@@ -84,6 +85,10 @@ export function resolveModelForProviderFile(params: {
 
   if (params.provider === "openai") {
     return params.config.openai?.default_model || DEFAULT_OPENAI_MODEL;
+  }
+
+  if (params.provider === "ollama") {
+    return params.config.ollama?.default_model || DEFAULT_OLLAMA_MODEL;
   }
 
   return resolveModelForFile({

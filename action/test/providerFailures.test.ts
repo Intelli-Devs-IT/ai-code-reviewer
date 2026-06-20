@@ -48,6 +48,22 @@ test("OpenAI missing model status is classified as model_unavailable", () => {
   assert.equal(classifyProviderError({ status: 404 }), "model_unavailable");
 });
 
+test("Ollama unreachable endpoint errors are classified as network_error", () => {
+  assert.equal(classifyProviderError(new Error("fetch failed")), "network_error");
+  assert.equal(
+    classifyProviderError(new Error("connect ECONNREFUSED 127.0.0.1:11434")),
+    "network_error"
+  );
+});
+
+test("Ollama missing model status is classified as model_unavailable", () => {
+  assert.equal(classifyProviderError({ status: 404 }), "model_unavailable");
+});
+
+test("Ollama rate limit status is classified as rate_limited", () => {
+  assert.equal(classifyProviderError({ status: 429 }), "rate_limited");
+});
+
 test("OpenRouter rate limit statuses are classified as rate_limited", () => {
   assert.equal(classifyProviderError({ status: 408 }), "rate_limited");
   assert.equal(classifyProviderError({ status: 429 }), "rate_limited");

@@ -29,6 +29,7 @@
 * provider quota/payment failure handling in logs and summary output
 * optional OpenRouter provider with provider-aware primary/fallback model resolution
 * optional OpenAI provider with provider-aware primary/fallback model resolution
+* optional Ollama provider with local/self-hosted primary/fallback model resolution
 * external analysis report configuration and parsing foundation
 * external analysis findings used as capped prompt evidence and risk context
 

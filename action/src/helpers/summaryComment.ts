@@ -356,6 +356,7 @@ function formatProviderFailure(failure: ProviderFailure): string {
 }
 
 function formatProviderName(provider?: string): string {
+  if (provider === "ollama") return "Ollama";
   if (provider === "openai") return "OpenAI";
   if (provider === "openrouter") return "OpenRouter";
   if (provider === "huggingface") return "Hugging Face";

@@ -3,6 +3,7 @@ import * as github from "@actions/github";
 import { getInlineConfidenceThreshold } from "./config";
 import type { LlmProviderName } from "./config";
 import { HuggingFaceLLM } from "./llm.huggingface";
+import { OllamaProvider } from "./llm.ollama";
 import { OpenAIProvider } from "./llm.openai";
 import { OpenRouterProvider } from "./llm.openrouter";
 import { loadConfig, fileMatchesConfig } from "./load-config";
@@ -328,6 +329,10 @@ async function upsertSummaryComment(
 }
 
 function getProviderApiKeyEnvVar(provider: LlmProviderName): string {
+  if (provider === "ollama") {
+    return "";
+  }
+
   if (provider === "openai") {
     return "OPENAI_API_KEY";
   }
@@ -336,6 +341,10 @@ function getProviderApiKeyEnvVar(provider: LlmProviderName): string {
 }
 
 function getProviderDisplayName(provider: LlmProviderName): string {
+  if (provider === "ollama") {
+    return "Ollama";
+  }
+
   if (provider === "openai") {
     return "OpenAI";
   }
@@ -348,8 +357,13 @@ function createConfiguredProvider(params: {
   hfKey?: string;
   openRouterKey?: string;
   openAIKey?: string;
+  ollamaBaseUrl?: string;
   referer?: string;
 }): LlmProvider | null {
+  if (params.provider === "ollama") {
+    return new OllamaProvider(params.ollamaBaseUrl ?? "");
+  }
+
   if (params.provider === "openai") {
     return params.openAIKey
       ? new OpenAIProvider(params.openAIKey, fetch)
@@ -433,12 +447,15 @@ async function run() {
     const hfKey = process.env.HF_API_KEY;
     const openRouterKey = process.env.OPENROUTER_API_KEY;
     const openAIKey = process.env.OPENAI_API_KEY;
+    const ollamaBaseUrl =
+      process.env.OLLAMA_BASE_URL?.trim() || config.ollama?.base_url;
     const providerReferer = `${process.env.GITHUB_SERVER_URL ?? "https://github.com"}/${owner}/${repo}`;
     let primaryProvider = createConfiguredProvider({
       provider: primaryProviderName,
       hfKey,
       openRouterKey,
       openAIKey,
+      ollamaBaseUrl,
       referer: providerReferer,
     });
     const fallbackProvider = fallbackProviderName
@@ -447,6 +464,7 @@ async function run() {
           hfKey,
           openRouterKey,
           openAIKey,
+          ollamaBaseUrl,
           referer: providerReferer,
         }) ?? undefined
       : undefined;
@@ -454,7 +472,9 @@ async function run() {
     if (!primaryProvider) {
       const envVarName = getProviderApiKeyEnvVar(primaryProviderName);
       core.warning(
-        `${getProviderDisplayName(primaryProviderName)} primary provider is configured but ${envVarName} is not set.`
+        envVarName
+          ? `${getProviderDisplayName(primaryProviderName)} primary provider is configured but ${envVarName} is not set.`
+          : `${getProviderDisplayName(primaryProviderName)} primary provider could not be configured.`
       );
       if (primaryProviderName === "huggingface" && !fallbackProviderName) {
         core.warning("HF_API_KEY not set. AI reviews disabled.");
@@ -467,8 +487,11 @@ async function run() {
     }
 
     if (fallbackProviderName && !fallbackProvider) {
+      const envVarName = getProviderApiKeyEnvVar(fallbackProviderName);
       core.warning(
-        `${getProviderDisplayName(fallbackProviderName)} fallback provider is configured but ${getProviderApiKeyEnvVar(fallbackProviderName)} is not set.`
+        envVarName
+          ? `${getProviderDisplayName(fallbackProviderName)} fallback provider is configured but ${envVarName} is not set.`
+          : `${getProviderDisplayName(fallbackProviderName)} fallback provider could not be configured.`
       );
     }
 
@@ -607,15 +630,19 @@ async function run() {
         );
         let attemptedFunctionsForFile = 0;
 
-        core.info(
-          [
-            "Using provider model:",
-            `file=${file.filename}`,
-            `provider=${primaryProviderName}`,
-            `model=${inlineReviewModel}`,
-            `language=${inlineLanguage}`,
-          ].join("\n")
-        );
+        const providerModelLog = [
+          "Using provider model:",
+          `file=${file.filename}`,
+          `provider=${primaryProviderName}`,
+          `model=${inlineReviewModel}`,
+          `language=${inlineLanguage}`,
+        ];
+
+        if (primaryProviderName === "ollama" && ollamaBaseUrl) {
+          providerModelLog.push(`baseUrl=${ollamaBaseUrl}`);
+        }
+
+        core.info(providerModelLog.join("\n"));
 
         const changedLines = getChangedLines(patch);
         if (changedLines.length === 0) {
