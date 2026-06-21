@@ -39,20 +39,24 @@ export class HuggingFaceLLM implements LlmProvider {
 
   async reviewDiff(
     prompt: string,
-    modelOverride?: string
+    modelOverride?: string,
+    signal?: AbortSignal,
   ): Promise<string | null> {
     const selectedModel = modelOverride ?? this.model;
 
     try {
-      const chatCompletion = await this.client.chat.completions.create({
-        model: selectedModel,
-        messages: [
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-      });
+      const chatCompletion = await this.client.chat.completions.create(
+        {
+          model: selectedModel,
+          messages: [
+            {
+              role: "user",
+              content: prompt,
+            },
+          ],
+        },
+        signal ? { signal } : undefined,
+      );
       const text = extractModelResponseText(chatCompletion);
 
       return assertValidModelResponseText({
@@ -110,8 +114,13 @@ export class HuggingFaceLLM implements LlmProvider {
     prompt: string;
     model: string;
     temperature?: number;
+    signal?: AbortSignal;
   }): Promise<string> {
-    const text = await this.reviewDiff(params.prompt, params.model);
+    const text = await this.reviewDiff(
+      params.prompt,
+      params.model,
+      params.signal,
+    );
 
     return assertValidModelResponseText({
       text: text ?? "",

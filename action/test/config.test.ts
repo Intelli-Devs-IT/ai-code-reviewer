@@ -4,16 +4,20 @@ import test from "node:test";
 import {
   DEFAULT_MAX_FUNCTIONS_PER_FILE,
   DEFAULT_MAX_INLINE_COMMENTS,
+  DEFAULT_MAX_PROVIDER_ATTEMPTS_PER_REVIEW,
   DEFAULT_MAX_TOTAL_FUNCTIONS,
   DEFAULT_OPENAI_MODEL,
   DEFAULT_OLLAMA_BASE_URL,
   DEFAULT_OLLAMA_MODEL,
+  DEFAULT_OLLAMA_TIMEOUT_MS,
   DEFAULT_OPENROUTER_MODEL,
+  DEFAULT_PROVIDER_TIMEOUT_MS,
   DEFAULT_PROVIDER_FALLBACK_ON,
   DEFAULT_CONFIG,
   getInlineConfidenceThreshold,
   mergeReviewerConfig,
   resolveProviderChain,
+  resolveProviderTimeoutMs,
 } from "../src/config";
 
 test("config defaults security review mode to disabled", () => {
@@ -71,6 +75,24 @@ test("config defaults providers to huggingface without fallback", () => {
   assert.equal(config.providers?.primary, "huggingface");
   assert.equal(config.providers?.fallback, undefined);
   assert.deepEqual(config.providers?.fallback_on, DEFAULT_PROVIDER_FALLBACK_ON);
+  assert.equal(config.providers?.timeout_ms, DEFAULT_PROVIDER_TIMEOUT_MS);
+  assert.equal(
+    config.providers?.max_attempts_per_review,
+    DEFAULT_MAX_PROVIDER_ATTEMPTS_PER_REVIEW,
+  );
+});
+
+test("config defaults provider timeouts", () => {
+  const config = mergeReviewerConfig();
+
+  assert.equal(config.huggingface?.timeout_ms, DEFAULT_PROVIDER_TIMEOUT_MS);
+  assert.equal(config.openrouter?.timeout_ms, DEFAULT_PROVIDER_TIMEOUT_MS);
+  assert.equal(config.openai?.timeout_ms, DEFAULT_PROVIDER_TIMEOUT_MS);
+  assert.equal(config.ollama?.timeout_ms, DEFAULT_OLLAMA_TIMEOUT_MS);
+  assert.equal(
+    resolveProviderTimeoutMs(config, "ollama"),
+    DEFAULT_OLLAMA_TIMEOUT_MS,
+  );
 });
 
 test("config defaults OpenRouter model", () => {
@@ -166,6 +188,51 @@ test("config reads provider fallback chain settings", () => {
     "rate_limited",
     "model_unavailable",
   ]);
+});
+
+test("config reads provider timeout and max attempt settings", () => {
+  const config = mergeReviewerConfig({
+    providers: {
+      timeout_ms: 20000,
+      max_attempts_per_review: 3,
+    },
+    openai: {
+      timeout_ms: 25000,
+    },
+    ollama: {
+      timeout_ms: 5000,
+    },
+  });
+
+  assert.equal(config.providers?.timeout_ms, 20000);
+  assert.equal(config.providers?.max_attempts_per_review, 3);
+  assert.equal(resolveProviderTimeoutMs(config, "huggingface"), 20000);
+  assert.equal(resolveProviderTimeoutMs(config, "openrouter"), 20000);
+  assert.equal(resolveProviderTimeoutMs(config, "openai"), 25000);
+  assert.equal(resolveProviderTimeoutMs(config, "ollama"), 5000);
+});
+
+test("invalid timeout and max attempt settings fall back to defaults", () => {
+  const config = mergeReviewerConfig({
+    providers: {
+      timeout_ms: -1,
+      max_attempts_per_review: 0,
+    },
+    openai: {
+      timeout_ms: -5,
+    },
+    ollama: {
+      timeout_ms: -10,
+    },
+  });
+
+  assert.equal(config.providers?.timeout_ms, DEFAULT_PROVIDER_TIMEOUT_MS);
+  assert.equal(
+    config.providers?.max_attempts_per_review,
+    DEFAULT_MAX_PROVIDER_ATTEMPTS_PER_REVIEW,
+  );
+  assert.equal(resolveProviderTimeoutMs(config, "openai"), DEFAULT_PROVIDER_TIMEOUT_MS);
+  assert.equal(resolveProviderTimeoutMs(config, "ollama"), DEFAULT_OLLAMA_TIMEOUT_MS);
 });
 
 test("resolveProviderChain uses configured fallback chain", () => {

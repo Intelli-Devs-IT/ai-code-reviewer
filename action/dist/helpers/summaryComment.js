@@ -15,7 +15,7 @@ function createSummaryFinding({ filePath, functionName, review, risk, }) {
         risk,
     };
 }
-function buildSummaryBody({ reviewedFilePaths, findings, providerFailures = [], providerFailureBehavior = "warn", providerFallbackUsed = false, reviewLimits, externalAnalysis, externalAnalysisRisk = "low", }) {
+function buildSummaryBody({ reviewedFilePaths, findings, providerFailures = [], providerFailureBehavior = "warn", providerFallbackUsed = false, providerFallbackLimited = false, reviewLimits, externalAnalysis, externalAnalysisRisk = "low", }) {
     const dedupedFindings = dedupeFindings(findings);
     const baseOverallRisk = reviewedFilePaths.size === 0 && providerFailures.length > 0
         ? "unknown"
@@ -38,7 +38,7 @@ ${formatKeyFindings(dedupedFindings, providerFailures)}
 
 ${formatProviderFailures(providerFailures, providerFailureBehavior)}
 
-${formatProviderFallbackUsage(providerFallbackUsed)}
+${formatProviderFallbackUsage(providerFallbackUsed, providerFallbackLimited)}
 
 ${formatReviewLimits(reviewLimits)}
 
@@ -184,11 +184,18 @@ ${dedupeProviderFailures(providerFailures)
         .map((failure) => `* ${formatProviderFailure(failure)}`)
         .join("\n")}`;
 }
-function formatProviderFallbackUsage(providerFallbackUsed) {
-    if (!providerFallbackUsed) {
+function formatProviderFallbackUsage(providerFallbackUsed, providerFallbackLimited) {
+    if (!providerFallbackUsed && !providerFallbackLimited) {
         return "";
     }
-    return "## Provider Fallback\n\nProvider fallback was used for some reviews.";
+    const lines = [];
+    if (providerFallbackUsed) {
+        lines.push("Provider fallback was used for some reviews.");
+    }
+    if (providerFallbackLimited) {
+        lines.push("Provider fallback was limited by configured timeouts or max attempts to control runtime.");
+    }
+    return `## Provider Fallback\n\n${lines.join("\n")}`;
 }
 function formatReviewLimits(reviewLimits) {
     if (!hasLimitSkips(reviewLimits)) {

@@ -57,7 +57,9 @@ test("Hugging Face quota failure triggers OpenRouter fallback", async () => {
   assert.match(logs[1], /Provider failed, trying next fallback:/);
   assert.match(logs[1], /failureType=quota_exceeded/);
   assert.match(logs[2], /LLM provider attempt:/);
-  assert.match(logs[3], /Fallback provider succeeded:/);
+  assert.match(logs[3], /Provider chain stopped:/);
+  assert.match(logs[3], /reason=valid_response/);
+  assert.match(logs[4], /Fallback provider succeeded:/);
 });
 
 test("fallback failure is recorded safely", async () => {
@@ -287,19 +289,56 @@ test("provider chain stops after first success", async () => {
   assert.equal(result.provider, "openrouter");
   assert.equal(result.model, "cohere/north-mini-code:free");
   assert.equal(result.usedFallback, true);
-  assert.deepEqual(result.attempts, [
-    {
-      provider: "openai",
-      model: "gpt-4.1-mini",
-      success: false,
-      failureType: "rate_limited",
-    },
-    {
-      provider: "openrouter",
-      model: "cohere/north-mini-code:free",
-      success: true,
-    },
-  ]);
+  assert.equal(result.attempts.length, 2);
+  assert.deepEqual(
+    result.attempts.map(({ provider, model, success, failureType }) => ({
+      provider,
+      model,
+      success,
+      failureType,
+    })),
+    [
+      {
+        provider: "openai",
+        model: "gpt-4.1-mini",
+        success: false,
+        failureType: "rate_limited",
+      },
+      {
+        provider: "openrouter",
+        model: "cohere/north-mini-code:free",
+        success: true,
+        failureType: undefined,
+      },
+    ],
+  );
+  assert.ok(result.attempts.every((attempt) => attempt.durationMs >= 0));
+});
+
+test("NO_REVIEW stops the fallback chain", async () => {
+  let fallbackCalls = 0;
+  const result = await callLlmWithProviderChain({
+    prompt: "review",
+    providerChain: [
+      {
+        provider: provider("openai", async () => "NO_REVIEW"),
+        model: "gpt-4.1-mini",
+      },
+      {
+        provider: provider("openrouter", async () => {
+          fallbackCalls += 1;
+          return "fallback text";
+        }),
+        model: "cohere/north-mini-code:free",
+      },
+    ],
+    fallbackOn: ["rate_limited"],
+  });
+
+  assert.equal(result.text, "NO_REVIEW");
+  assert.equal(result.provider, "openai");
+  assert.equal(result.usedFallback, false);
+  assert.equal(fallbackCalls, 0);
 });
 
 test("provider chain tries next provider for fallback-eligible failures", async () => {
@@ -381,6 +420,101 @@ test("provider chain stops for non-fallback-eligible failures", async () => {
   );
 
   assert.equal(fallbackCalls, 0);
+});
+
+test("provider call times out after configured timeout", async () => {
+  await assert.rejects(
+    () =>
+      callLlmWithProviderChain({
+        prompt: "review",
+        providerChain: [
+          {
+            provider: provider("ollama", async () => new Promise(() => {})),
+            model: "qwen2.5-coder:7b",
+            timeoutMs: 1,
+          },
+        ],
+        fallbackOn: ["network_error"],
+      }),
+    (error) => {
+      assert.ok(error instanceof LlmProviderCallError);
+      assert.equal(error.failure.provider, "ollama");
+      assert.equal(error.failure.type, "network_error");
+      assert.equal(error.metadata?.stopReason, "timeout");
+      assert.doesNotMatch(error.failure.message, /Bearer|Authorization|sk-/);
+      return true;
+    },
+  );
+});
+
+test("default timeout is applied to provider attempts", async () => {
+  const logs: string[] = [];
+  await callLlmWithProviderChain({
+    prompt: "review",
+    providerChain: [
+      {
+        provider: provider("openai", async (params) => {
+          assert.ok(params.signal);
+          return "valid review";
+        }),
+        model: "gpt-4.1-mini",
+      },
+    ],
+    fallbackOn: ["network_error"],
+    logger: {
+      info: (message) => logs.push(message),
+    },
+  });
+
+  assert.match(logs.join("\n"), /timeoutMs=30000/);
+  assert.match(logs.join("\n"), /reason=valid_response/);
+});
+
+test("max_attempts_per_review limits provider attempts", async () => {
+  let thirdProviderCalls = 0;
+
+  await assert.rejects(
+    () =>
+      callLlmWithProviderChain({
+        prompt: "review",
+        providerChain: [
+          {
+            provider: provider("openai", async () => {
+              const error = new Error("rate limit");
+              (error as any).status = 429;
+              throw error;
+            }),
+            model: "gpt-4.1-mini",
+          },
+          {
+            provider: provider("openrouter", async () => {
+              const error = new Error("rate limit");
+              (error as any).status = 429;
+              throw error;
+            }),
+            model: "cohere/north-mini-code:free",
+          },
+          {
+            provider: provider("ollama", async () => {
+              thirdProviderCalls += 1;
+              return "unused";
+            }),
+            model: "qwen2.5-coder:7b",
+          },
+        ],
+        fallbackOn: ["rate_limited"],
+        maxAttempts: 2,
+      }),
+    (error) => {
+      assert.ok(error instanceof LlmProviderCallError);
+      assert.equal(error.failure.provider, "openrouter");
+      assert.equal(error.metadata?.stopReason, "max_attempts_reached");
+      assert.equal(error.metadata?.attempts?.length, 2);
+      return true;
+    },
+  );
+
+  assert.equal(thirdProviderCalls, 0);
 });
 
 test("provider chain records final failure when all providers fail", async () => {

@@ -18,6 +18,7 @@ class OpenRouterProvider {
                 ...(this.referer ? { "HTTP-Referer": this.referer } : {}),
                 "X-Title": "AI Code Reviewer",
             },
+            signal: params.signal,
             body: JSON.stringify({
                 model: params.model,
                 messages: [

@@ -1,6 +1,10 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
-import { getInlineConfidenceThreshold, resolveProviderChain } from "./config";
+import {
+  getInlineConfidenceThreshold,
+  resolveProviderChain,
+  resolveProviderTimeoutMs,
+} from "./config";
 import type { LlmProviderName } from "./config";
 import { HuggingFaceLLM } from "./llm.huggingface";
 import { OllamaProvider } from "./llm.ollama";
@@ -436,6 +440,8 @@ async function run() {
     const providerFailureBehavior =
       config.provider_failures?.behavior ?? "warn";
     const fallbackOn = config.providers?.fallback_on ?? [];
+    const maxProviderAttemptsPerReview =
+      config.providers?.max_attempts_per_review ?? 2;
     const providerChainNames = resolveProviderChain(config);
     const primaryProviderName = providerChainNames[0] ?? "huggingface";
     const reviewLimits = getReviewLimits(config);
@@ -598,6 +604,7 @@ async function run() {
     const summaryFindings: SummaryFinding[] = [];
     const providerFailures: ProviderFailure[] = [];
     let providerFallbackUsed = false;
+    let providerFallbackLimited = false;
     let highestAcceptedFindingRisk: RiskLevel = "low";
     let highestExternalAnalysisRisk: RiskLevel = "low";
 
@@ -644,6 +651,7 @@ async function run() {
               filePath: file.filename,
               config,
             }),
+            timeoutMs: resolveProviderTimeoutMs(config, entry.name),
           })
         );
         const inlineReviewModel = inlineProviderChain[0]?.model ?? "";
@@ -802,6 +810,7 @@ async function run() {
                 prompt,
                 providerChain: inlineProviderChain,
                 fallbackOn,
+                maxAttempts: maxProviderAttemptsPerReview,
                 filePath: file.filename,
                 functionName: target.fn.name,
                 logger: core,
@@ -821,6 +830,13 @@ async function run() {
                       provider: primaryProviderName,
                       model: inlineReviewModel,
                     });
+              if (
+                error instanceof LlmProviderCallError &&
+                (error.metadata?.stopReason === "max_attempts_reached" ||
+                  error.metadata?.stopReason === "timeout")
+              ) {
+                providerFallbackLimited = true;
+              }
               providerFailures.push(providerFailure);
               logReviewSkip(core, {
                 filePath: file.filename,
@@ -1049,6 +1065,7 @@ async function run() {
             prompt,
             providerChain: inlineProviderChain,
             fallbackOn,
+            maxAttempts: maxProviderAttemptsPerReview,
             filePath: file.filename,
             logger: core,
           });
@@ -1066,6 +1083,13 @@ async function run() {
                   provider: primaryProviderName,
                   model: inlineReviewModel,
                 });
+          if (
+            error instanceof LlmProviderCallError &&
+            (error.metadata?.stopReason === "max_attempts_reached" ||
+              error.metadata?.stopReason === "timeout")
+          ) {
+            providerFallbackLimited = true;
+          }
           providerFailures.push(providerFailure);
           logReviewSkip(core, {
             filePath: file.filename,
@@ -1202,6 +1226,7 @@ async function run() {
           providerFailures,
           providerFailureBehavior,
           providerFallbackUsed,
+          providerFallbackLimited,
           reviewLimits: reviewLimitState,
           externalAnalysis,
           externalAnalysisRisk: highestExternalAnalysisRisk,
@@ -1261,6 +1286,7 @@ async function run() {
           providerFailures,
           providerFailureBehavior,
           providerFallbackUsed,
+          providerFallbackLimited,
           reviewLimits: reviewLimitState,
           externalAnalysis,
           externalAnalysisRisk: highestExternalAnalysisRisk,
@@ -1288,6 +1314,7 @@ async function run() {
         providerFailures,
         providerFailureBehavior,
         providerFallbackUsed,
+        providerFallbackLimited,
         reviewLimits: reviewLimitState,
         externalAnalysis,
         externalAnalysisRisk: highestExternalAnalysisRisk,

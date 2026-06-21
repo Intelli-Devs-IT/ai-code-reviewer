@@ -20,6 +20,7 @@ export class OpenRouterProvider implements LlmProvider {
     prompt: string;
     model: string;
     temperature?: number;
+    signal?: AbortSignal;
   }): Promise<string> {
     const response = await this.fetchImpl(
       "https://openrouter.ai/api/v1/chat/completions",
@@ -31,6 +32,7 @@ export class OpenRouterProvider implements LlmProvider {
           ...(this.referer ? { "HTTP-Referer": this.referer } : {}),
           "X-Title": "AI Code Reviewer",
         },
+        signal: params.signal,
         body: JSON.stringify({
           model: params.model,
           messages: [

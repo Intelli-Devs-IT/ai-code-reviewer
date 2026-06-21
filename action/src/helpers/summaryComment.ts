@@ -25,6 +25,7 @@ export interface SummaryBodyOptions {
   providerFailures?: ProviderFailure[];
   providerFailureBehavior?: "warn" | "fail" | "skip";
   providerFallbackUsed?: boolean;
+  providerFallbackLimited?: boolean;
   reviewLimits?: ReviewLimitState;
   externalAnalysis?: ExternalAnalysisSummary;
   externalAnalysisRisk?: SummaryRiskLevel;
@@ -55,6 +56,7 @@ export function buildSummaryBody({
   providerFailures = [],
   providerFailureBehavior = "warn",
   providerFallbackUsed = false,
+  providerFallbackLimited = false,
   reviewLimits,
   externalAnalysis,
   externalAnalysisRisk = "low",
@@ -83,7 +85,7 @@ ${formatKeyFindings(dedupedFindings, providerFailures)}
 
 ${formatProviderFailures(providerFailures, providerFailureBehavior)}
 
-${formatProviderFallbackUsage(providerFallbackUsed)}
+${formatProviderFallbackUsage(providerFallbackUsed, providerFallbackLimited)}
 
 ${formatReviewLimits(reviewLimits)}
 
@@ -299,12 +301,27 @@ ${dedupeProviderFailures(providerFailures)
   .join("\n")}`;
 }
 
-function formatProviderFallbackUsage(providerFallbackUsed: boolean): string {
-  if (!providerFallbackUsed) {
+function formatProviderFallbackUsage(
+  providerFallbackUsed: boolean,
+  providerFallbackLimited: boolean
+): string {
+  if (!providerFallbackUsed && !providerFallbackLimited) {
     return "";
   }
 
-  return "## Provider Fallback\n\nProvider fallback was used for some reviews.";
+  const lines: string[] = [];
+
+  if (providerFallbackUsed) {
+    lines.push("Provider fallback was used for some reviews.");
+  }
+
+  if (providerFallbackLimited) {
+    lines.push(
+      "Provider fallback was limited by configured timeouts or max attempts to control runtime."
+    );
+  }
+
+  return `## Provider Fallback\n\n${lines.join("\n")}`;
 }
 
 function formatReviewLimits(reviewLimits?: ReviewLimitState): string {

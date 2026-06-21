@@ -312,6 +312,7 @@ async function run() {
         const INLINE_CONFIDENCE_THRESHOLD = (0, config_1.getInlineConfidenceThreshold)(reviewStrictness);
         const providerFailureBehavior = config.provider_failures?.behavior ?? "warn";
         const fallbackOn = config.providers?.fallback_on ?? [];
+        const maxProviderAttemptsPerReview = config.providers?.max_attempts_per_review ?? 2;
         const providerChainNames = (0, config_1.resolveProviderChain)(config);
         const primaryProviderName = providerChainNames[0] ?? "huggingface";
         const reviewLimits = (0, reviewLimits_1.getReviewLimits)(config);
@@ -442,6 +443,7 @@ async function run() {
         const summaryFindings = [];
         const providerFailures = [];
         let providerFallbackUsed = false;
+        let providerFallbackLimited = false;
         let highestAcceptedFindingRisk = "low";
         let highestExternalAnalysisRisk = "low";
         const labelMap = {
@@ -477,6 +479,7 @@ async function run() {
                     filePath: file.filename,
                     config,
                 }),
+                timeoutMs: (0, config_1.resolveProviderTimeoutMs)(config, entry.name),
             }));
             const inlineReviewModel = inlineProviderChain[0]?.model ?? "";
             const fileExternalFindings = (0, externalAnalysis_1.getFindingsForFile)(externalAnalysis.findings, file.filename);
@@ -594,6 +597,7 @@ async function run() {
                             prompt,
                             providerChain: inlineProviderChain,
                             fallbackOn,
+                            maxAttempts: maxProviderAttemptsPerReview,
                             filePath: file.filename,
                             functionName: target.fn.name,
                             logger: core,
@@ -613,6 +617,11 @@ async function run() {
                                 provider: primaryProviderName,
                                 model: inlineReviewModel,
                             });
+                        if (error instanceof llmProvider_1.LlmProviderCallError &&
+                            (error.metadata?.stopReason === "max_attempts_reached" ||
+                                error.metadata?.stopReason === "timeout")) {
+                            providerFallbackLimited = true;
+                        }
                         providerFailures.push(providerFailure);
                         (0, reviewDiagnostics_1.logReviewSkip)(core, {
                             filePath: file.filename,
@@ -797,6 +806,7 @@ async function run() {
                     prompt,
                     providerChain: inlineProviderChain,
                     fallbackOn,
+                    maxAttempts: maxProviderAttemptsPerReview,
                     filePath: file.filename,
                     logger: core,
                 });
@@ -814,6 +824,11 @@ async function run() {
                         provider: primaryProviderName,
                         model: inlineReviewModel,
                     });
+                if (error instanceof llmProvider_1.LlmProviderCallError &&
+                    (error.metadata?.stopReason === "max_attempts_reached" ||
+                        error.metadata?.stopReason === "timeout")) {
+                    providerFallbackLimited = true;
+                }
                 providerFailures.push(providerFailure);
                 (0, reviewDiagnostics_1.logReviewSkip)(core, {
                     filePath: file.filename,
@@ -924,6 +939,7 @@ async function run() {
                 providerFailures,
                 providerFailureBehavior,
                 providerFallbackUsed,
+                providerFallbackLimited,
                 reviewLimits: reviewLimitState,
                 externalAnalysis,
                 externalAnalysisRisk: highestExternalAnalysisRisk,
@@ -947,6 +963,7 @@ async function run() {
                 providerFailures,
                 providerFailureBehavior,
                 providerFallbackUsed,
+                providerFallbackLimited,
                 reviewLimits: reviewLimitState,
                 externalAnalysis,
                 externalAnalysisRisk: highestExternalAnalysisRisk,
@@ -963,6 +980,7 @@ async function run() {
             providerFailures,
             providerFailureBehavior,
             providerFallbackUsed,
+            providerFallbackLimited,
             reviewLimits: reviewLimitState,
             externalAnalysis,
             externalAnalysisRisk: highestExternalAnalysisRisk,

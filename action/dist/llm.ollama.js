@@ -15,6 +15,7 @@ class OllamaProvider {
             headers: {
                 "Content-Type": "application/json",
             },
+            signal: params.signal,
             body: JSON.stringify({
                 model: params.model,
                 messages: [

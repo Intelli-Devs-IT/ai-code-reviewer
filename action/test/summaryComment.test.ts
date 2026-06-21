@@ -178,6 +178,20 @@ test("summary can mention provider fallback usage", () => {
   assert.match(body, /Provider fallback was used for some reviews\./);
 });
 
+test("summary can mention provider fallback limits", () => {
+  const body = buildSummaryBody({
+    reviewedFilePaths: new Set(["src/a.ts"]),
+    findings: [],
+    providerFallbackLimited: true,
+  });
+
+  assert.match(body, /## Provider Fallback/);
+  assert.match(
+    body,
+    /Provider fallback was limited by configured timeouts or max attempts/
+  );
+});
+
 test("skip behavior keeps provider failure summary concise", () => {
   const body = buildSummaryBody({
     reviewedFilePaths: new Set(["src/a.ts"]),

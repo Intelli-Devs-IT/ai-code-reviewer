@@ -142,6 +142,7 @@ Merge Blocking
 * Hugging Face, OpenRouter, OpenAI, and Ollama model names must be resolved separately for primary and fallback calls.
 * `providers.fallbacks` takes precedence over legacy `providers.fallback`; fallback order is deterministic and duplicate providers are skipped.
 * Fallback should only happen for configured fallback-eligible failure types. Auth and config errors should usually stop the chain.
+* Provider calls should use configured timeouts, and each function review should respect `providers.max_attempts_per_review` to keep fallback chains bounded.
 * Inline comments should be attached to changed lines whenever possible.
 * If a function start line is not commentable, use a changed line inside that function.
 * If AST extraction fails or returns no functions, the old scoped diff fallback can be used.

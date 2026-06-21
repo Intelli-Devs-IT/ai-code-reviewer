@@ -57,6 +57,8 @@ Ollama defaults to `http://localhost:11434/v1` with `qwen2.5-coder:7b`. `OLLAMA_
 
 When `providers.fallbacks` is configured, fallback providers are tried in order and duplicates are skipped. The older `providers.fallback` field remains supported as a one-provider fallback chain. Fallback only happens for failure types listed in `providers.fallback_on`; authentication or configuration errors should usually be fixed rather than used as fallback triggers.
 
+Provider calls are bounded by timeouts and per-review attempt limits. The default provider timeout is 30 seconds, Ollama defaults to 15 seconds, and `providers.max_attempts_per_review` defaults to 2 so long fallback chains do not run for every changed function unless explicitly configured.
+
 Optional external analysis report loading can be enabled with `analysis.lint`, `analysis.semgrep`, and `analysis.tests`. The action can load and normalize existing JSON report files, correlate findings with changed files/functions, and include a capped evidence section in inline review prompts. It does not run those tools directly and does not post tool findings blindly as comments.
 
 Example `.ai-reviewer.yml`:
@@ -98,6 +100,8 @@ provider_failures:
 
 providers:
   primary: huggingface
+  timeout_ms: 30000
+  max_attempts_per_review: 2
   fallbacks:
     - openrouter
     - openai
@@ -111,13 +115,16 @@ providers:
 
 openrouter:
   default_model: cohere/north-mini-code:free
+  timeout_ms: 30000
 
 openai:
   default_model: gpt-4.1-mini
+  timeout_ms: 30000
 
 ollama:
   base_url: http://localhost:11434/v1
   default_model: qwen2.5-coder:7b
+  timeout_ms: 15000
 
 analysis:
   lint:

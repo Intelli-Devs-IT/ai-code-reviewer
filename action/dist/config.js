@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DEFAULT_CONFIG = exports.DEFAULT_MAX_TOTAL_FUNCTIONS = exports.DEFAULT_MAX_FUNCTIONS_PER_FILE = exports.DEFAULT_MAX_INLINE_COMMENTS = exports.DEFAULT_OLLAMA_MODEL = exports.DEFAULT_OLLAMA_BASE_URL = exports.DEFAULT_OPENAI_MODEL = exports.DEFAULT_OPENROUTER_MODEL = exports.DEFAULT_PROVIDER_FALLBACK_ON = void 0;
+exports.DEFAULT_CONFIG = exports.DEFAULT_MAX_TOTAL_FUNCTIONS = exports.DEFAULT_MAX_FUNCTIONS_PER_FILE = exports.DEFAULT_MAX_INLINE_COMMENTS = exports.DEFAULT_MAX_PROVIDER_ATTEMPTS_PER_REVIEW = exports.DEFAULT_OLLAMA_TIMEOUT_MS = exports.DEFAULT_PROVIDER_TIMEOUT_MS = exports.DEFAULT_OLLAMA_MODEL = exports.DEFAULT_OLLAMA_BASE_URL = exports.DEFAULT_OPENAI_MODEL = exports.DEFAULT_OPENROUTER_MODEL = exports.DEFAULT_PROVIDER_FALLBACK_ON = void 0;
 exports.mergeReviewerConfig = mergeReviewerConfig;
 exports.normalizeReviewStrictness = normalizeReviewStrictness;
 exports.normalizeModelValidationMode = normalizeModelValidationMode;
@@ -9,6 +9,7 @@ exports.normalizeLlmProviderName = normalizeLlmProviderName;
 exports.normalizeOptionalLlmProviderName = normalizeOptionalLlmProviderName;
 exports.normalizeOptionalLlmProviderNames = normalizeOptionalLlmProviderNames;
 exports.resolveProviderChain = resolveProviderChain;
+exports.resolveProviderTimeoutMs = resolveProviderTimeoutMs;
 exports.normalizeProviderFallbackOn = normalizeProviderFallbackOn;
 exports.normalizePositiveInteger = normalizePositiveInteger;
 exports.normalizeNonEmptyString = normalizeNonEmptyString;
@@ -24,6 +25,9 @@ exports.DEFAULT_OPENROUTER_MODEL = "cohere/north-mini-code:free";
 exports.DEFAULT_OPENAI_MODEL = "gpt-4.1-mini";
 exports.DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1";
 exports.DEFAULT_OLLAMA_MODEL = "qwen2.5-coder:7b";
+exports.DEFAULT_PROVIDER_TIMEOUT_MS = 30000;
+exports.DEFAULT_OLLAMA_TIMEOUT_MS = 15000;
+exports.DEFAULT_MAX_PROVIDER_ATTEMPTS_PER_REVIEW = 2;
 exports.DEFAULT_MAX_INLINE_COMMENTS = 10;
 exports.DEFAULT_MAX_FUNCTIONS_PER_FILE = 5;
 exports.DEFAULT_MAX_TOTAL_FUNCTIONS = 30;
@@ -50,16 +54,24 @@ exports.DEFAULT_CONFIG = {
     providers: {
         primary: "huggingface",
         fallback_on: exports.DEFAULT_PROVIDER_FALLBACK_ON,
+        timeout_ms: exports.DEFAULT_PROVIDER_TIMEOUT_MS,
+        max_attempts_per_review: exports.DEFAULT_MAX_PROVIDER_ATTEMPTS_PER_REVIEW,
+    },
+    huggingface: {
+        timeout_ms: exports.DEFAULT_PROVIDER_TIMEOUT_MS,
     },
     openrouter: {
         default_model: exports.DEFAULT_OPENROUTER_MODEL,
+        timeout_ms: exports.DEFAULT_PROVIDER_TIMEOUT_MS,
     },
     openai: {
         default_model: exports.DEFAULT_OPENAI_MODEL,
+        timeout_ms: exports.DEFAULT_PROVIDER_TIMEOUT_MS,
     },
     ollama: {
         base_url: exports.DEFAULT_OLLAMA_BASE_URL,
         default_model: exports.DEFAULT_OLLAMA_MODEL,
+        timeout_ms: exports.DEFAULT_OLLAMA_TIMEOUT_MS,
     },
     analysis: {
         lint: {
@@ -94,6 +106,7 @@ function mergeReviewerConfig(config = {}) {
     const primaryProvider = normalizeLlmProviderName(config.providers?.primary, "huggingface");
     const fallbackProvider = normalizeOptionalLlmProviderName(config.providers?.fallback);
     const fallbackProviders = normalizeOptionalLlmProviderNames(config.providers?.fallbacks);
+    const providerTimeoutMs = normalizePositiveInteger(config.providers?.timeout_ms, exports.DEFAULT_PROVIDER_TIMEOUT_MS);
     return {
         ...exports.DEFAULT_CONFIG,
         ...config,
@@ -130,20 +143,30 @@ function mergeReviewerConfig(config = {}) {
             fallback: fallbackProvider,
             fallbacks: fallbackProviders,
             fallback_on: normalizeProviderFallbackOn(config.providers?.fallback_on),
+            timeout_ms: providerTimeoutMs,
+            max_attempts_per_review: normalizePositiveInteger(config.providers?.max_attempts_per_review, exports.DEFAULT_MAX_PROVIDER_ATTEMPTS_PER_REVIEW),
+        },
+        huggingface: {
+            ...exports.DEFAULT_CONFIG.huggingface,
+            ...(config.huggingface ?? {}),
+            timeout_ms: normalizePositiveInteger(config.huggingface?.timeout_ms, providerTimeoutMs),
         },
         openrouter: {
             ...exports.DEFAULT_CONFIG.openrouter,
             ...(config.openrouter ?? {}),
+            timeout_ms: normalizePositiveInteger(config.openrouter?.timeout_ms, providerTimeoutMs),
         },
         openai: {
             ...exports.DEFAULT_CONFIG.openai,
             ...(config.openai ?? {}),
+            timeout_ms: normalizePositiveInteger(config.openai?.timeout_ms, providerTimeoutMs),
         },
         ollama: {
             ...exports.DEFAULT_CONFIG.ollama,
             ...(config.ollama ?? {}),
             base_url: normalizeNonEmptyString(config.ollama?.base_url, exports.DEFAULT_OLLAMA_BASE_URL),
             default_model: normalizeNonEmptyString(config.ollama?.default_model, exports.DEFAULT_OLLAMA_MODEL),
+            timeout_ms: normalizePositiveInteger(config.ollama?.timeout_ms, exports.DEFAULT_OLLAMA_TIMEOUT_MS),
         },
         analysis: {
             lint: {
@@ -227,6 +250,19 @@ function resolveProviderChain(config) {
         chain.push(provider);
     }
     return chain;
+}
+function resolveProviderTimeoutMs(config, provider) {
+    switch (provider) {
+        case "openrouter":
+            return config.openrouter?.timeout_ms ?? exports.DEFAULT_PROVIDER_TIMEOUT_MS;
+        case "openai":
+            return config.openai?.timeout_ms ?? exports.DEFAULT_PROVIDER_TIMEOUT_MS;
+        case "ollama":
+            return config.ollama?.timeout_ms ?? exports.DEFAULT_OLLAMA_TIMEOUT_MS;
+        case "huggingface":
+        default:
+            return config.huggingface?.timeout_ms ?? exports.DEFAULT_PROVIDER_TIMEOUT_MS;
+    }
 }
 function normalizeProviderFallbackOn(value) {
     if (!Array.isArray(value)) {

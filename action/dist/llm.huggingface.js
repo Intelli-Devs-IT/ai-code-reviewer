@@ -23,7 +23,7 @@ class HuggingFaceLLM {
             apiKey: this.apiKey,
         });
     }
-    async reviewDiff(prompt, modelOverride) {
+    async reviewDiff(prompt, modelOverride, signal) {
         const selectedModel = modelOverride ?? this.model;
         try {
             const chatCompletion = await this.client.chat.completions.create({
@@ -34,7 +34,7 @@ class HuggingFaceLLM {
                         content: prompt,
                     },
                 ],
-            });
+            }, signal ? { signal } : undefined);
             const text = (0, modelResponseValidation_1.extractModelResponseText)(chatCompletion);
             return (0, modelResponseValidation_1.assertValidModelResponseText)({
                 text: text ?? "",
@@ -81,7 +81,7 @@ class HuggingFaceLLM {
         // }
     }
     async review(params) {
-        const text = await this.reviewDiff(params.prompt, params.model);
+        const text = await this.reviewDiff(params.prompt, params.model, params.signal);
         return (0, modelResponseValidation_1.assertValidModelResponseText)({
             text: text ?? "",
             model: params.model,

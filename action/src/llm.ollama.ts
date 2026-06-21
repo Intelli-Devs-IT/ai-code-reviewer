@@ -22,6 +22,7 @@ export class OllamaProvider implements LlmProvider {
     prompt: string;
     model: string;
     temperature?: number;
+    signal?: AbortSignal;
   }): Promise<string> {
     const response = await this.fetchImpl(
       `${this.normalizedBaseUrl}/chat/completions`,
@@ -30,6 +31,7 @@ export class OllamaProvider implements LlmProvider {
         headers: {
           "Content-Type": "application/json",
         },
+        signal: params.signal,
         body: JSON.stringify({
           model: params.model,
           messages: [

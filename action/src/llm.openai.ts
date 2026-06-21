@@ -19,6 +19,7 @@ export class OpenAIProvider implements LlmProvider {
     prompt: string;
     model: string;
     temperature?: number;
+    signal?: AbortSignal;
   }): Promise<string> {
     const response = await this.fetchImpl(
       "https://api.openai.com/v1/chat/completions",
@@ -28,6 +29,7 @@ export class OpenAIProvider implements LlmProvider {
           Authorization: `Bearer ${this.apiKey}`,
           "Content-Type": "application/json",
         },
+        signal: params.signal,
         body: JSON.stringify({
           model: params.model,
           messages: [

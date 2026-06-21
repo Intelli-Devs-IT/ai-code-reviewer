@@ -37,7 +37,9 @@ function classifyProviderError(error) {
         message.includes("fetch failed") ||
         message.includes("econnrefused") ||
         message.includes("econnreset") ||
-        message.includes("etimedout")) {
+        message.includes("etimedout") ||
+        message.includes("timed out") ||
+        message.includes("timeout")) {
         return "network_error";
     }
     return "unknown";
